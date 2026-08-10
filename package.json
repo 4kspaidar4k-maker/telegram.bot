@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
   "keywords": [],
   "author": "",
@@ -13,6 +13,6 @@
   "dependencies": {
     "express": "^5.2.1",
     "node-telegram-bot-api": "^1.2.0",
-    "sqlite3": "^6.0.1"
+    "pg": "^8.16.3"
   }
 }
