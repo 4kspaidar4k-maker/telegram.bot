@@ -1,15 +1,18 @@
 {
-  "name": "telegram.bot",
+  "name": "telegram-access-system",
   "version": "1.0.0",
-  "description": "Telegram Bot with PostgreSQL",
-  "main": "index.js",
+  "description": "نظام طلب وصول عبر تيليجرام",
+  "main": "server.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
   "dependencies": {
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "node-telegram-bot-api": "^0.66.0",
-    "pg": "^8.13.0"
+    "axios": "^1.6.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
   }
 }
