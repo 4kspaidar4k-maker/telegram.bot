@@ -1,11 +1,10 @@
 {
   "name": "telegram-bot",
   "version": "1.0.0",
-  "description": "Telegram Bot and Express API",
+  "description": "Telegram Bot and Contact API Server",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
   "keywords": [],
   "author": "",
