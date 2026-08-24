@@ -368,14 +368,6 @@ app.get(
 // ============================================================
 // طلب تواصل
 // ============================================================
-//
-// الموقع يرسل:
-// {
-//     ref: "...",
-//     phone: "07XXXXXXXX"
-// }
-//
-// ============================================================
 
 app.post(
     "/api/request-access",
@@ -409,10 +401,6 @@ app.post(
             }
 
 
-            // -----------------------------------------------
-            // معرفة صاحب رابط الإحالة
-            // -----------------------------------------------
-
             const referral =
                 await getReferral(ref);
 
@@ -430,10 +418,6 @@ app.post(
             const telegramId =
                 referral.telegram_id;
 
-
-            // -----------------------------------------------
-            // إنشاء الطلب
-            // -----------------------------------------------
 
             const requestId =
                 createRequestId();
@@ -474,10 +458,6 @@ app.post(
                 }
             );
 
-
-            // -----------------------------------------------
-            // إشعار صاحب الرابط
-            // -----------------------------------------------
 
             await bot.sendMessage(
 
@@ -691,7 +671,6 @@ bot.onText(
                 `${firstName} ${lastName}`.trim();
 
 
-            // إذا وافق سابقًا → القائمة
             if (
                 acceptedUsers.has(chatId)
             ) {
@@ -703,7 +682,6 @@ bot.onText(
             }
 
 
-            // أول دخول
             await bot.sendMessage(
 
                 chatId,
@@ -773,6 +751,100 @@ bot.on(
 
             const data =
                 query.data;
+
+
+            // =================================================
+            // ✅ قبول الطلب
+            // =================================================
+
+            if (
+                data.startsWith("approve:")
+            ) {
+
+                const requestId =
+                    data.split(":")[1];
+
+
+                await updateRequestStatus(
+                    requestId,
+                    "approved"
+                );
+
+
+                await bot.answerCallbackQuery(
+
+                    query.id,
+
+                    {
+                        text:
+                            "✅ تم قبول طلب التواصل"
+                    }
+
+                );
+
+
+                await bot.editMessageText(
+
+                    `✅ تم قبول طلب التواصل`,
+
+                    {
+                        chat_id: chatId,
+                        message_id:
+                            query.message.message_id
+                    }
+
+                );
+
+
+                return;
+            }
+
+
+            // =================================================
+            // ❌ رفض الطلب
+            // =================================================
+
+            if (
+                data.startsWith("reject:")
+            ) {
+
+                const requestId =
+                    data.split(":")[1];
+
+
+                await updateRequestStatus(
+                    requestId,
+                    "rejected"
+                );
+
+
+                await bot.answerCallbackQuery(
+
+                    query.id,
+
+                    {
+                        text:
+                            "❌ تم رفض طلب التواصل"
+                    }
+
+                );
+
+
+                await bot.editMessageText(
+
+                    `❌ تم رفض طلب التواصل`,
+
+                    {
+                        chat_id: chatId,
+                        message_id:
+                            query.message.message_id
+                    }
+
+                );
+
+
+                return;
+            }
 
 
             // =================================================
@@ -886,10 +958,6 @@ ${chatId}
 
             }
 
-
-            // =================================================
-            // إنشاء Referral
-            // =================================================
 
             const token =
                 await createReferral(
