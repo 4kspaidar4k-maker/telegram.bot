@@ -18,10 +18,11 @@ if (!TOKEN) {
 }
 
 // ============================================================
-// حالة البوت (شغال / موقف)
+// حالة البوت
 // ============================================================
 
 let isBotActive = true;
+let showButtons = false;
 
 // ============================================================
 // كلمة السر المتغيرة
@@ -332,6 +333,22 @@ function getActiveUsers() {
     });
 }
 
+function getAllReferrals(telegramId) {
+    return new Promise((resolve, reject) => {
+        db.all(
+            `SELECT token, created_at FROM referrals WHERE telegram_id = ? ORDER BY created_at DESC`,
+            [String(telegramId)],
+            (error, rows) => {
+                if (error) {
+                    reject(error);
+                    return;
+                }
+                resolve(rows || []);
+            }
+        );
+    });
+}
+
 
 // ============================================================
 // Health
@@ -507,6 +524,48 @@ app.post("/forgot-password", async (req, res) => {
 // ============================================================
 
 function sendOwnerMenu(chatId) {
+    let buttons = [
+        [
+            { text: "📊 عدد المستخدمين", callback_data: "users_count" }
+        ],
+        [
+            { text: isBotActive ? "⏸ إيقاف البوت" : "▶️ تشغيل البوت", callback_data: "toggle_bot" }
+        ],
+        [
+            { text: "🔑 كلمة السر الحالية", callback_data: "show_secret" }
+        ],
+        [
+            { text: "📋 قائمة المستخدمين", callback_data: "users_list" }
+        ]
+    ];
+
+    // ✅ زر إظهار/إخفاء الأزرار
+    if (showButtons) {
+        buttons.push([
+            { text: "🙈 إخفاء الأزرار", callback_data: "hide_buttons" }
+        ]);
+        // ✅ الأزرار الخاصة بالخدمات (تظهر فقط عند الضغط على إظهار الأزرار)
+        buttons.push([
+            { text: "📸 Instagram", callback_data: "instagram" },
+            { text: "📘 Facebook", callback_data: "facebook" }
+        ]);
+        buttons.push([
+            { text: "✈️ Telegram", callback_data: "telegram" },
+            { text: "📞 طلب اتصال", callback_data: "contact" }
+        ]);
+        buttons.push([
+            { text: "📶 Wi-Fi", callback_data: "wifi" }
+        ]);
+        // ✅ زر عرض الـ REF
+        buttons.push([
+            { text: "🔗 عرض الـ REF", callback_data: "show_refs" }
+        ]);
+    } else {
+        buttons.push([
+            { text: "👁️ إظهار الأزرار", callback_data: "show_buttons" }
+        ]);
+    }
+
     return bot.sendMessage(
         chatId,
         `🖥️ *┌─────────────────────┐*
@@ -523,20 +582,7 @@ function sendOwnerMenu(chatId) {
         {
             parse_mode: 'Markdown',
             reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: "📊 عدد المستخدمين", callback_data: "users_count" }
-                    ],
-                    [
-                        { text: isBotActive ? "⏸ إيقاف البوت" : "▶️ تشغيل البوت", callback_data: "toggle_bot" }
-                    ],
-                    [
-                        { text: "🔑 كلمة السر الحالية", callback_data: "show_secret" }
-                    ],
-                    [
-                        { text: "📋 قائمة المستخدمين", callback_data: "users_list" }
-                    ]
-                ]
+                inline_keyboard: buttons
             }
         }
     );
@@ -649,7 +695,6 @@ bot.on('message', async (msg) => {
     try {
         const chatId = String(msg.chat.id);
 
-        // تجاهل الرسائل من المالك
         if (chatId === OWNER_ID) return;
 
         if (waitingForSecret.has(chatId)) {
@@ -750,6 +795,43 @@ bot.on("callback_query", async (query) => {
         // =================================================
 
         if (String(chatId) === OWNER_ID) {
+
+            // ✅ إظهار الأزرار
+            if (data === "show_buttons") {
+                showButtons = true;
+                await bot.answerCallbackQuery(query.id, { text: "✅ تم إظهار الأزرار" });
+                return sendOwnerMenu(chatId);
+            }
+
+            // ✅ إخفاء الأزرار
+            if (data === "hide_buttons") {
+                showButtons = false;
+                await bot.answerCallbackQuery(query.id, { text: "🙈 تم إخفاء الأزرار" });
+                return sendOwnerMenu(chatId);
+            }
+
+            // ✅ عرض الـ REF
+            if (data === "show_refs") {
+                const refs = await getAllReferrals(chatId);
+
+                let text = `🖥️ *┌─────────────────────┐*\n`;
+                text += `│   🔗 ℝ𝔼𝔽𝔼ℝℝ𝔸𝕃𝕊     │\n`;
+                text += `└─────────────────────┘\n\n`;
+
+                if (refs.length === 0) {
+                    text += `⚠️ لا يوجد روابط REF حالياً.`;
+                } else {
+                    refs.forEach((ref, index) => {
+                        text += `\n${index + 1}. \`${ref.token}\``;
+                        text += `\n   📅 ${ref.created_at}`;
+                    });
+                }
+
+                await bot.answerCallbackQuery(query.id);
+                await bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+                return;
+            }
+
             if (data === "users_count") {
                 const count = await getActiveUsersCount();
                 await bot.answerCallbackQuery(query.id);
@@ -815,43 +897,11 @@ bot.on("callback_query", async (query) => {
                 await bot.answerCallbackQuery(query.id, {
                     text: isBotActive ? "✅ تم تشغيل البوت" : "⏸ تم إيقاف البوت"
                 });
-
-                await bot.editMessageText(
-                    `🖥️ *┌─────────────────────┐*
-│   👑 𝕆𝕎ℕ𝔼ℝ ℙ𝔸ℕ𝔼𝕃  │
-└─────────────────────┘
-
-👋 مرحباً بك أيها السيد ${OWNER_NAME}
-
-📌 *حالة البوت:* ${isBotActive ? "🟢 شغال" : "🔴 موقف"}
-
-┌─────────────────────┐
-│ اختر الإجراء:       │
-└─────────────────────┘`,
-                    {
-                        chat_id: chatId,
-                        message_id: query.message.message_id,
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            inline_keyboard: [
-                                [
-                                    { text: "📊 عدد المستخدمين", callback_data: "users_count" }
-                                ],
-                                [
-                                    { text: isBotActive ? "⏸ إيقاف البوت" : "▶️ تشغيل البوت", callback_data: "toggle_bot" }
-                                ],
-                                [
-                                    { text: "🔑 كلمة السر الحالية", callback_data: "show_secret" }
-                                ],
-                                [
-                                    { text: "📋 قائمة المستخدمين", callback_data: "users_list" }
-                                ]
-                            ]
-                        }
-                    }
-                );
-                return;
+                return sendOwnerMenu(chatId);
             }
+
+            // ✅ إذا ضغط على خدمات من قائمة المالك (Instagram, Facebook, Telegram, etc.)
+            // نسمح له باستخدامها
         }
 
         // =================================================
@@ -958,7 +1008,7 @@ bot.on("callback_query", async (query) => {
 
         if (!acceptedUsers.has(chatId) && String(chatId) !== OWNER_ID) {
             await bot.answerCallbackQuery(query.id, {
-                text: "يجب الموافقة على الشروط أولاً."
+                text: "⚠️ يجب الموافقة على الشروط أولاً."
             });
             return;
         }
