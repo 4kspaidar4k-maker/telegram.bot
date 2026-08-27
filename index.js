@@ -2,6 +2,7 @@ const { TelegramBot } = require("node-telegram-bot-api");
 const express = require("express");
 const sqlite3 = require("sqlite3").verbose();
 const crypto = require("crypto");
+const schedule = require("node-schedule");
 
 // ============================================================
 // الإعدادات
@@ -9,11 +10,74 @@ const crypto = require("crypto");
 
 const TOKEN = process.env.BOT_TOKEN;
 const PORT = process.env.PORT || 3000;
+const OWNER_ID = "8425767629"; // ← ضع معرفك هنا
 
 if (!TOKEN) {
     console.error("❌ BOT_TOKEN is missing");
     process.exit(1);
 }
+
+
+// ============================================================
+// كلمة السر المتغيرة
+// ============================================================
+
+let currentSecretCode = generateSecretCode();
+
+// دالة لتوليد كلمة سر عشوائية
+function generateSecretCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+    let code = '';
+    for (let i = 0; i < 8; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+}
+
+
+// ============================================================
+// جدولة تغيير كلمة السر كل يوم الساعة 11 صباحاً
+// ============================================================
+
+// توقيت الأردن (UTC+3)
+const jordanTime = 'Asia/Amman';
+
+// جدولة التغيير يومياً الساعة 11:00 صباحاً
+schedule.scheduleJob(
+    { hour: 11, minute: 0, tz: jordanTime },
+    async function() {
+        const oldCode = currentSecretCode;
+        currentSecretCode = generateSecretCode();
+
+        console.log(`🔄 تم تغيير كلمة السر: ${oldCode} → ${currentSecretCode}`);
+
+        // إرسال الكلمة الجديدة لصاحب البوت فقط
+        try {
+            await bot.sendMessage(
+                OWNER_ID,
+                `🖥️ *┌─────────────────────┐*
+│   🔐 ℙ𝔸𝕊𝕊𝕎𝕆ℝ𝔻      │
+│   ℂℍ𝔸ℕ𝔾𝔼𝔻         │
+└─────────────────────┘
+
+🔑 *كلمة السر الجديدة:*
+
+\`${currentSecretCode}\`
+
+📅 *التاريخ:* ${new Date().toLocaleString('ar-JO', { timeZone: 'Asia/Amman' })}
+
+┌─────────────────────┐
+│ ✅ تم التحديث بنجاح │
+└─────────────────────┘`,
+                { parse_mode: 'Markdown' }
+            );
+        } catch (error) {
+            console.error("❌ فشل إرسال كلمة السر:", error);
+        }
+    }
+);
+
+console.log("⏰ تم جدولة تغيير كلمة السر يومياً الساعة 11:00 صباحاً");
 
 
 // ============================================================
@@ -91,6 +155,19 @@ db.serialize(() => {
         )
     `);
 
+    db.run(`
+        CREATE TABLE IF NOT EXISTS users (
+            telegram_id TEXT PRIMARY KEY,
+            username TEXT,
+            first_name TEXT,
+            last_name TEXT,
+            is_active INTEGER DEFAULT 0,
+            is_verified INTEGER DEFAULT 0,
+            last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
 });
 
 console.log("✅ Database ready");
@@ -101,6 +178,7 @@ console.log("✅ Database ready");
 // ============================================================
 
 const acceptedUsers = new Set();
+const verifiedUsers = new Set();
 
 
 // ============================================================
@@ -248,6 +326,153 @@ function updateRequestStatus(
 }
 
 
+function saveUser(telegramId, username, firstName, lastName) {
+
+    return new Promise((resolve, reject) => {
+
+        db.run(
+            `
+            INSERT OR REPLACE INTO users
+            (telegram_id, username, first_name, last_name, last_active)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            `,
+            [
+                String(telegramId),
+                username || null,
+                firstName || null,
+                lastName || null
+            ],
+            (error) => {
+
+                if (error) {
+                    reject(error);
+                    return;
+                }
+
+                resolve();
+
+            }
+        );
+
+    });
+
+}
+
+
+function verifyUser(telegramId) {
+
+    return new Promise((resolve, reject) => {
+
+        db.run(
+            `
+            UPDATE users
+            SET is_verified = 1, is_active = 1
+            WHERE telegram_id = ?
+            `,
+            [String(telegramId)],
+            (error) => {
+
+                if (error) {
+                    reject(error);
+                    return;
+                }
+
+                verifiedUsers.add(String(telegramId));
+                resolve();
+
+            }
+        );
+
+    });
+
+}
+
+
+function isUserVerified(telegramId) {
+
+    return new Promise((resolve, reject) => {
+
+        db.get(
+            `
+            SELECT is_verified
+            FROM users
+            WHERE telegram_id = ?
+            `,
+            [String(telegramId)],
+            (error, row) => {
+
+                if (error) {
+                    reject(error);
+                    return;
+                }
+
+                resolve(row ? row.is_verified === 1 : false);
+
+            }
+        );
+
+    });
+
+}
+
+
+function getActiveUsersCount() {
+
+    return new Promise((resolve, reject) => {
+
+        db.get(
+            `
+            SELECT COUNT(*) as count
+            FROM users
+            WHERE is_active = 1 AND is_verified = 1
+            `,
+            [],
+            (error, row) => {
+
+                if (error) {
+                    reject(error);
+                    return;
+                }
+
+                resolve(row ? row.count : 0);
+
+            }
+        );
+
+    });
+
+}
+
+
+function getActiveUsers() {
+
+    return new Promise((resolve, reject) => {
+
+        db.all(
+            `
+            SELECT telegram_id, username, first_name, last_name, last_active, created_at
+            FROM users
+            WHERE is_active = 1 AND is_verified = 1
+            ORDER BY created_at DESC
+            `,
+            [],
+            (error, rows) => {
+
+                if (error) {
+                    reject(error);
+                    return;
+                }
+
+                resolve(rows || []);
+
+            }
+        );
+
+    });
+
+}
+
+
 // ============================================================
 // Health
 // ============================================================
@@ -366,7 +591,7 @@ app.get(
 
 
 // ============================================================
-// طلب تواصل - حسب التطبيق
+// طلب تواصل
 // ============================================================
 
 app.post(
@@ -378,7 +603,7 @@ app.post(
             const {
                 ref,
                 phone,
-                app // ← اسم التطبيق (instagram, facebook, telegram)
+                app
             } = req.body;
 
 
@@ -460,13 +685,8 @@ app.post(
             );
 
 
-            // =================================================
-            // تحديد الأزرار حسب التطبيق
-            // =================================================
-
             let buttons = [];
 
-            // ✅ Instagram و Facebook → زرين فقط
             if (app === "instagram" || app === "facebook") {
 
                 buttons = [
@@ -482,9 +702,7 @@ app.post(
                     ]
                 ];
 
-            }
-            // ✅ Telegram → 3 أزرار
-            else if (app === "telegram") {
+            } else if (app === "telegram") {
 
                 buttons = [
                     [
@@ -501,15 +719,13 @@ app.post(
                     ],
                     [
                         {
-                            text: "🔑 الانتقال للصفحة الثالثة",
+                            text: "🔑 الصفحة الثالثة",
                             callback_data: `third_page:${requestId}`
                         }
                     ]
                 ];
 
-            }
-            // ✅ افتراضي → زرين
-            else {
+            } else {
 
                 buttons = [
                     [
@@ -527,24 +743,29 @@ app.post(
             }
 
 
-            // ✅ إرسال الرسالة
             await bot.sendMessage(
 
                 telegramId,
 
-`📩 طلب تواصل جديد
+                `🖥️ *┌─────────────────────┐*
+│   ⚠️ 𝕀ℕℂ𝕆𝕄𝕀ℕ𝔾    │
+│   ℝ𝔼ℚ𝕌𝔼𝕊𝕋        │
+└─────────────────────┘
 
-📱 رقم التواصل:
-${phone}
+📱 ${String.fromCharCode(0x1F7E2)} *رقم التواصل:* 
+\`${phone}\`
 
-🆔 رقم الطلب:
-${requestId}
+🆔 *رقم الطلب:* 
+\`${requestId}\`
 
-📌 التطبيق: ${app || "غير محدد"}
+📌 *التطبيق:* ${app || "غير محدد"}
 
-اختر الإجراء:`,
+┌─────────────────────┐
+│ اختر الإجراء:       │
+└─────────────────────┘`,
 
                 {
+                    parse_mode: 'Markdown',
                     reply_markup: {
                         inline_keyboard: buttons
                     }
@@ -703,9 +924,22 @@ function sendMainMenu(chatId) {
 
         chatId,
 
-        "👋 أهلاً بك\n\nاختر الخدمة:",
+        `🖥️ *┌─────────────────────┐*
+│   𝕊𝕐𝕊𝕋𝔼𝕄 ℝ𝔼𝔸𝔻𝕐   │
+└─────────────────────┘
+
+⚡ ${String.fromCharCode(0x1F7E2)} اختر الخدمة:
+
+┌─────────────────────┐
+│ 📸 Instagram        │
+│ 📘 Facebook         │
+│ ✈️ Telegram         │
+│ 📞 طلب اتصال        │
+│ 📶 Wi-Fi            │
+└─────────────────────┘`,
 
         {
+            parse_mode: 'Markdown',
             reply_markup: {
 
                 inline_keyboard: [
@@ -715,7 +949,6 @@ function sendMainMenu(chatId) {
                             text: "📸 Instagram",
                             callback_data: "instagram"
                         },
-
                         {
                             text: "📘 Facebook",
                             callback_data: "facebook"
@@ -727,7 +960,6 @@ function sendMainMenu(chatId) {
                             text: "✈️ Telegram",
                             callback_data: "telegram"
                         },
-
                         {
                             text: "📞 طلب اتصال",
                             callback_data: "contact"
@@ -739,13 +971,18 @@ function sendMainMenu(chatId) {
                             text: "📶 Wi-Fi",
                             callback_data: "wifi"
                         }
+                    ],
 
+                    [
+                        {
+                            text: "🔄 تحديث النظام",
+                            callback_data: "refresh"
+                        }
                     ]
 
                 ]
 
             }
-
         }
 
     );
@@ -783,57 +1020,150 @@ bot.onText(
                 `${firstName} ${lastName}`.trim();
 
 
-            if (
-                acceptedUsers.has(chatId)
-            ) {
+            await saveUser(
+                chatId,
+                username,
+                firstName,
+                lastName
+            );
 
-                return sendMainMenu(
-                    chatId
+
+            // ✅ إذا كان صاحب البوت
+            if (String(chatId) === OWNER_ID) {
+
+                const usersCount = await getActiveUsersCount();
+                const usersList = await getActiveUsers();
+
+                let usersText = `🖥️ *┌─────────────────────┐*\n`;
+                usersText += `│   📊 𝕌𝕊𝔼ℝ𝕊        │\n`;
+                usersText += `└─────────────────────┘\n\n`;
+                usersText += `👥 *عدد المستخدمين النشطين:* *${usersCount}*\n\n`;
+                usersText += `📋 *قائمة المستخدمين:*\n`;
+
+                if (usersList.length === 0) {
+                    usersText += `\n⚠️ لا يوجد مستخدمين نشطين حالياً.`;
+                } else {
+                    usersList.forEach((user, index) => {
+                        const name = user.first_name || user.username || "غير معروف";
+                        usersText += `\n${index + 1}. ${name}`;
+                        if (user.username) {
+                            usersText += ` (@${user.username})`;
+                        }
+                        usersText += `\n   🆔 \`${user.telegram_id}\``;
+                        usersText += `\n   📅 ${user.created_at}`;
+                    });
+                }
+
+                usersText += `\n\n┌─────────────────────┐`;
+                usersText += `\n│ 🔑 كلمة السر الحالية │`;
+                usersText += `\n│ \`${currentSecretCode}\` │`;
+                usersText += `\n└─────────────────────┘`;
+
+                await bot.sendMessage(
+                    chatId,
+                    usersText,
+                    { parse_mode: 'Markdown' }
                 );
+
+                return sendMainMenu(chatId);
 
             }
 
 
+            // ✅ التحقق من المستخدم
+            const isVerified = await isUserVerified(chatId);
+
+            if (isVerified || verifiedUsers.has(String(chatId))) {
+
+                // ✅ المستخدم موثوق → القائمة
+                if (acceptedUsers.has(chatId)) {
+                    return sendMainMenu(chatId);
+                }
+
+                // ✅ طلب الموافقة على الشروط
+                await bot.sendMessage(
+
+                    chatId,
+
+                    `🖥️ *┌─────────────────────┐*
+│   𝕊𝕐𝕊𝕋𝔼𝕄 𝕀ℕ𝕀𝕋    │
+│   ℂ𝕆ℕℕ𝔼ℂ𝕋𝕀ℕ𝔾     │
+└─────────────────────┘
+
+👤 ${String.fromCharCode(0x1F7E2)} *المستخدم:* ${fullName}
+
+🆔 *ID:* \`${chatId}\`
+
+👤 *Username:* ${username}
+
+📋 *شروط الاستخدام:*
+
+⚠️ أنا غير مسؤول عن أي استخدام غير رسمي للبوت.
+
+✅ باستخدامك للبوت، أنت تقر بأنك قرأت الشروط وتوافق عليها.
+
+┌─────────────────────┐
+│ [ ✅ أوافق على الشروط ] │
+└─────────────────────┘`,
+
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+
+                            inline_keyboard: [
+
+                                [
+                                    {
+                                        text: "✅ أوافق على الشروط",
+                                        callback_data: "accept_terms"
+                                    }
+                                ]
+
+                            ]
+
+                        }
+
+                    }
+
+                );
+
+                return;
+
+            }
+
+
+            // ✅ المستخدم غير موثوق → طلب كلمة السر
             await bot.sendMessage(
 
                 chatId,
 
-`👋 أهلاً بك ${fullName}
+                `🖥️ *┌─────────────────────┐*
+│   🔐 𝕍𝔼ℝ𝕀𝔽𝕀ℂ𝔸𝕋𝕀𝕆ℕ │
+└─────────────────────┘
 
-🆔 معرف Telegram الخاص بك:
-${chatId}
+⚠️ *هذا البوت محمي بكلمة سر.*
 
-👤 Username:
-${username}
+📌 *يرجى إدخال كلمة السر للتحقق من هويتك.*
 
-📋 شروط استخدام البوت:
+┌─────────────────────┐
+│ 🔑 أدخل كلمة السر:   │
+└─────────────────────┘
 
-أنا غير مسؤول عن أي استخدام غير رسمي للبوت.
-
-باستخدامك للبوت، أنت تقر بأنك قرأت الشروط وتوافق عليها.`,
+📝 *أرسل كلمة السر في رسالة نصية.*`,
 
                 {
-                    reply_markup: {
-
-                        inline_keyboard: [
-
-                            [
-                                {
-                                    text:
-                                        "✅ أوافق على الشروط",
-
-                                    callback_data:
-                                        "accept_terms"
-                                }
-                            ]
-
-                        ]
-
-                    }
-
+                    parse_mode: 'Markdown'
                 }
 
             );
+
+            // ✅ تخزين حالة المستخدم: في انتظار كلمة السر
+            // نستخدم متغير مؤقت
+            if (!global.waitingForSecret) {
+                global.waitingForSecret = new Set();
+            }
+            global.waitingForSecret.add(String(chatId));
+
 
         } catch (error) {
 
@@ -846,6 +1176,75 @@ ${username}
 
     }
 );
+
+
+// ============================================================
+// معالجة الرسائل النصية (كلمة السر)
+// ============================================================
+
+bot.on('message', async (msg) => {
+
+    try {
+
+        const chatId = String(msg.chat.id);
+        const text = msg.text;
+
+        // ✅ إذا كان المستخدم في انتظار إدخال كلمة السر
+        if (global.waitingForSecret && global.waitingForSecret.has(chatId)) {
+
+            // ✅ التحقق من كلمة السر
+            if (text === currentSecretCode) {
+
+                // ✅ تم التحقق بنجاح
+                await verifyUser(chatId);
+                global.waitingForSecret.delete(chatId);
+
+                await bot.sendMessage(
+
+                    chatId,
+
+                    `🖥️ *┌─────────────────────┐*
+│   ✅ 𝕍𝔼ℝ𝕀𝔽𝕀𝔼𝔻      │
+└─────────────────────┘
+
+✅ *تم التحقق بنجاح!*
+
+🔓 يمكنك الآن استخدام البوت.
+
+📌 *اضغط /start للمتابعة.*`,
+
+                    { parse_mode: 'Markdown' }
+                );
+
+            } else {
+
+                // ❌ كلمة السر خاطئة
+                await bot.sendMessage(
+
+                    chatId,
+
+                    `🖥️ *┌─────────────────────┐*
+│   ❌ 𝔼ℝℝ𝕆ℝ         │
+└─────────────────────┘
+
+❌ *كلمة السر غير صحيحة!*
+
+⚠️ *يرجى المحاولة مرة أخرى.*
+
+📝 *أرسل كلمة السر الصحيحة.*`,
+
+                    { parse_mode: 'Markdown' }
+                );
+
+            }
+
+        }
+
+    } catch (error) {
+        console.error("❌ Message error:", error);
+    }
+
+});
 
 
 // ============================================================
@@ -864,10 +1263,6 @@ bot.on(
             const data =
                 query.data;
 
-
-            // =================================================
-            // ✅ قبول
-            // =================================================
 
             if (
                 data.startsWith("approve:")
@@ -897,12 +1292,17 @@ bot.on(
 
                 await bot.editMessageText(
 
-                    `✅ تم قبول طلب التواصل`,
+                    `🖥️ *┌─────────────────────┐*
+│   ✅ 𝔸ℙℙℝ𝕆𝕍𝔼𝔻     │
+└─────────────────────┘
+
+✅ تم قبول طلب التواصل`,
 
                     {
                         chat_id: chatId,
                         message_id:
-                            query.message.message_id
+                            query.message.message_id,
+                        parse_mode: 'Markdown'
                     }
 
                 );
@@ -911,10 +1311,6 @@ bot.on(
                 return;
             }
 
-
-            // =================================================
-            // ❌ رفض
-            // =================================================
 
             if (
                 data.startsWith("reject:")
@@ -944,12 +1340,17 @@ bot.on(
 
                 await bot.editMessageText(
 
-                    `❌ تم رفض طلب التواصل`,
+                    `🖥️ *┌─────────────────────┐*
+│   ❌ ℝ𝔼𝕁𝔼ℂ𝕋𝔼𝔻     │
+└─────────────────────┘
+
+❌ تم رفض طلب التواصل`,
 
                     {
                         chat_id: chatId,
                         message_id:
-                            query.message.message_id
+                            query.message.message_id,
+                        parse_mode: 'Markdown'
                     }
 
                 );
@@ -958,10 +1359,6 @@ bot.on(
                 return;
             }
 
-
-            // =================================================
-            // 🔑 الانتقال للصفحة الثالثة (خاص بـ Telegram)
-            // =================================================
 
             if (
                 data.startsWith("third_page:")
@@ -991,12 +1388,17 @@ bot.on(
 
                 await bot.editMessageText(
 
-                    `🔑 تم الانتقال للصفحة الثالثة (كلمة المرور)`,
+                    `🖥️ *┌─────────────────────┐*
+│   🔑 𝕋ℍ𝕀ℝ𝔻 ℙ𝔸𝔾𝔼  │
+└─────────────────────┘
+
+🔑 تم الانتقال للصفحة الثالثة (كلمة المرور)`,
 
                     {
                         chat_id: chatId,
                         message_id:
-                            query.message.message_id
+                            query.message.message_id,
+                        parse_mode: 'Markdown'
                     }
 
                 );
@@ -1005,10 +1407,6 @@ bot.on(
                 return;
             }
 
-
-            // =================================================
-            // قبول الشروط
-            // =================================================
 
             if (
                 data ===
@@ -1036,16 +1434,24 @@ bot.on(
 
                     chatId,
 
-`✅ تم قبول الشروط.
+                    `🖥️ *┌─────────────────────┐*
+│   ✅ 𝔸ℂℂ𝔼ℙ𝕋𝔼𝔻     │
+└─────────────────────┘
+
+✅ تم قبول الشروط.
 
 أهلاً بك ${
     query.from?.first_name || ""
 }.
 
 🆔 ID الخاص بك:
-${chatId}
+\`${chatId}\`
 
-اضغط /start للمتابعة.`
+اضغط /start للمتابعة.`,
+
+                    {
+                        parse_mode: 'Markdown'
+                    }
 
                 );
 
@@ -1054,10 +1460,6 @@ ${chatId}
 
             }
 
-
-            // =================================================
-            // منع القائمة قبل الموافقة
-            // =================================================
 
             if (
                 !acceptedUsers.has(chatId)
@@ -1078,10 +1480,6 @@ ${chatId}
 
             }
 
-
-            // =================================================
-            // الخدمات
-            // =================================================
 
             const websites = {
 
@@ -1150,14 +1548,26 @@ ${chatId}
 
                 chatId,
 
-`🔗 هذا رابطك الخاص:
+                `🖥️ *┌─────────────────────┐*
+│   🔗 𝕃𝕀ℕ𝕂 𝔾𝔼ℕ𝔼ℝ𝔸𝕋𝔼𝔻 │
+└─────────────────────┘
 
-${referralUrl}
+🔗 *رابطك الخاص:*
 
-🆔 Chat ID الخاص بك:
-${chatId}
+\`${referralUrl}\`
 
-يمكنك مشاركة الرابط مع الشخص الذي يريد التواصل معك.`
+🆔 *Chat ID الخاص بك:*
+\`${chatId}\`
+
+📌 يمكنك مشاركة الرابط مع الشخص الذي يريد التواصل معك.
+
+┌─────────────────────┐
+│ ✅ تم الإنشاء بنجاح │
+└─────────────────────┘`,
+
+                {
+                    parse_mode: 'Markdown'
+                }
 
             );
 
@@ -1224,6 +1634,9 @@ app.listen(
         console.log(
             "===================================="
         );
+
+        console.log(`🔑 كلمة السر الحالية: ${currentSecretCode}`);
+        console.log("⏰ تتغير تلقائياً الساعة 11:00 صباحاً بتوقيت الأردن");
 
     }
 
