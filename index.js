@@ -2,7 +2,6 @@ const { TelegramBot } = require("node-telegram-bot-api");
 const express = require("express");
 const sqlite3 = require("sqlite3").verbose();
 const crypto = require("crypto");
-const schedule = require("node-schedule");
 
 // ============================================================
 // الإعدادات
@@ -24,7 +23,6 @@ if (!TOKEN) {
 
 let currentSecretCode = generateSecretCode();
 
-// دالة لتوليد كلمة سر عشوائية
 function generateSecretCode() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
     let code = '';
@@ -36,26 +34,31 @@ function generateSecretCode() {
 
 
 // ============================================================
-// جدولة تغيير كلمة السر كل يوم الساعة 11 صباحاً
+// جدولة تغيير كلمة السر (بدون node-schedule)
 // ============================================================
 
-// توقيت الأردن (UTC+3)
-const jordanTime = 'Asia/Amman';
+function scheduleDailyReset() {
+    const now = new Date();
+    const target = new Date();
+    target.setHours(11, 0, 0, 0);
 
-// جدولة التغيير يومياً الساعة 11:00 صباحاً
-schedule.scheduleJob(
-    { hour: 11, minute: 0, tz: jordanTime },
-    async function() {
+    if (now > target) {
+        target.setDate(target.getDate() + 1);
+    }
+
+    const msUntilTarget = target.getTime() - now.getTime();
+
+    console.log(`⏰ سيتم تغيير كلمة السر بعد ${Math.round(msUntilTarget / 60000)} دقيقة`);
+
+    setTimeout(() => {
         const oldCode = currentSecretCode;
         currentSecretCode = generateSecretCode();
 
         console.log(`🔄 تم تغيير كلمة السر: ${oldCode} → ${currentSecretCode}`);
 
-        // إرسال الكلمة الجديدة لصاحب البوت فقط
-        try {
-            await bot.sendMessage(
-                OWNER_ID,
-                `🖥️ *┌─────────────────────┐*
+        bot.sendMessage(
+            OWNER_ID,
+            `🖥️ *┌─────────────────────┐*
 │   🔐 ℙ𝔸𝕊𝕊𝕎𝕆ℝ𝔻      │
 │   ℂℍ𝔸ℕ𝔾𝔼𝔻         │
 └─────────────────────┘
@@ -69,15 +72,13 @@ schedule.scheduleJob(
 ┌─────────────────────┐
 │ ✅ تم التحديث بنجاح │
 └─────────────────────┘`,
-                { parse_mode: 'Markdown' }
-            );
-        } catch (error) {
-            console.error("❌ فشل إرسال كلمة السر:", error);
-        }
-    }
-);
+            { parse_mode: 'Markdown' }
+        ).catch(console.error);
 
-console.log("⏰ تم جدولة تغيير كلمة السر يومياً الساعة 11:00 صباحاً");
+        scheduleDailyReset();
+
+    }, msUntilTarget);
+}
 
 
 // ============================================================
@@ -171,6 +172,14 @@ db.serialize(() => {
 });
 
 console.log("✅ Database ready");
+
+
+// ============================================================
+// بدء جدولة تغيير كلمة السر
+// ============================================================
+
+scheduleDailyReset();
+console.log("⏰ تم جدولة تغيير كلمة السر يومياً الساعة 11:00 صباحاً");
 
 
 // ============================================================
@@ -1158,7 +1167,6 @@ bot.onText(
             );
 
             // ✅ تخزين حالة المستخدم: في انتظار كلمة السر
-            // نستخدم متغير مؤقت
             if (!global.waitingForSecret) {
                 global.waitingForSecret = new Set();
             }
