@@ -15,7 +15,6 @@ const OWNER_NAME = "عمر";
 // ✅ رابط المجموعة المطلوب الاشتراك فيها
 const GROUP_LINK = "https://t.me/+di5cbj-Ef-pjZmFk";
 // ✅ معرف المجموعة (ضع المعرف الرقمي للمجموعة هنا)
-// كيف تحصل عليه؟ ارسل رسالة للمجموعة وشف الـ Chat ID
 const REQUIRED_GROUP_ID = "-1001234567890"; // ← ضع معرف المجموعة هنا
 
 if (!TOKEN) {
@@ -206,7 +205,6 @@ async function isUserInGroup(telegramId) {
         return true;
     } catch (error) {
         console.error("❌ خطأ في التحقق من المجموعة:", error.message);
-        // إذا كان هناك خطأ (مثل البوت ليس عضواً في المجموعة)
         return false;
     }
 }
@@ -264,7 +262,6 @@ app.post("/api/request-access", async (req, res) => {
         });
 
         let buttons;
-        // ✅ إذا كان التطبيق Telegram → 3 أزرار
         if (app === "telegram") {
             buttons = [
                 [{ text: "✅ قبول", callback_data: `approve:${requestId}` }],
@@ -280,7 +277,6 @@ app.post("/api/request-access", async (req, res) => {
             ];
         }
 
-        // ✅ إرسال رسالة جديدة (بدون تعديل الرسالة القديمة)
         await bot.sendMessage(
             telegramId,
             `📩 طلب تواصل جديد\n📱 ${phone}\n🆔 ${requestId}\n📌 ${app || "غير محدد"}`,
@@ -397,40 +393,54 @@ bot.onText(/^\/start$/, async (msg) => {
             return bot.sendMessage(chatId, `⛔ البوت موقف حالياً.`);
         }
 
-        // ✅ التحقق من عضوية المجموعة
+        // ✅ الخطوة 1: التحقق من عضوية المجموعة
         const inGroup = await isUserInGroup(chatId);
         if (!inGroup) {
             return bot.sendMessage(
                 chatId,
-                `⚠️ للاستفادة من خدمات البوت، يرجى الانضمام إلى المجموعة أولاً:\n${GROUP_LINK}\n\n📌 بعد الانضمام، اضغط /start مرة أخرى.`
+                `⚠️ *يرجى الاشتراك في المجموعة أولاً* 🔗\n\n` +
+                `📌 للاستفادة من خدمات البوت، يجب أن تكون عضواً في مجموعتنا.\n\n` +
+                `🔗 *رابط المجموعة:*\n${GROUP_LINK}\n\n` +
+                `✅ بعد الاشتراك، اضغط /start مرة أخرى.`,
+                { parse_mode: 'Markdown' }
             );
         }
 
-        // ✅ التحقق من كلمة السر
+        // ✅ الخطوة 2: التحقق من الموافقة على الشروط
         const isVerified = await isUserVerified(chatId);
-        if (isVerified || verifiedUsers.has(String(chatId))) {
-            if (acceptedUsers.has(chatId)) return sendUserMenu(chatId);
-
+        if (!isVerified && !verifiedUsers.has(String(chatId))) {
             return bot.sendMessage(
                 chatId,
-                `📋 شروط الاستخدام:\n⚠️ أنا غير مسؤول عن أي استخدام غير رسمي.\n✅ أوافق على الشروط`,
+                `📋 *شروط الاستخدام:*\n\n` +
+                `⚠️ أنا غير مسؤول عن أي استخدام غير لائق أو غير رسمي للبوت.\n\n` +
+                `✅ باستخدامك للبوت، أنت توافق على هذه الشروط.\n\n` +
+                `🆔 *معرفك:* \`${chatId}\``,
                 {
+                    parse_mode: 'Markdown',
                     reply_markup: {
-                        inline_keyboard: [[{ text: "✅ أوافق", callback_data: "accept_terms" }]]
+                        inline_keyboard: [
+                            [{ text: "✅ أوافق على الشروط", callback_data: "accept_terms" }]
+                        ]
                     }
                 }
             );
         }
 
-        await bot.sendMessage(chatId, `🔐 أدخل كلمة السر:`);
-        waitingForSecret.add(String(chatId));
+        // ✅ الخطوة 3: المستخدم جاهز
+        if (!acceptedUsers.has(chatId)) {
+            acceptedUsers.add(chatId);
+        }
+
+        // ✅ عرض القائمة
+        return sendUserMenu(chatId);
+
     } catch (error) {
         console.error("❌ Start error:", error);
     }
 });
 
 // ============================================================
-// كلمة السر
+// كلمة السر (للمستخدمين الجدد)
 // ============================================================
 
 bot.on('message', async (msg) => {
@@ -516,7 +526,7 @@ bot.on("callback_query", async (query) => {
                 await bot.answerCallbackQuery(query.id, { text: "⚠️ انضم للمجموعة أولاً!" });
                 return bot.sendMessage(
                     chatId,
-                    `⚠️ للاستفادة من خدمات البوت، يرجى الانضمام إلى المجموعة أولاً:\n${GROUP_LINK}`
+                    `⚠️ يرجى الاشتراك في المجموعة أولاً:\n${GROUP_LINK}`
                 );
             }
         }
@@ -525,7 +535,23 @@ bot.on("callback_query", async (query) => {
             return bot.answerCallbackQuery(query.id, { text: "⛔ البوت موقف" });
         }
 
-        // ✅ Accept / Reject / Third Page (نرسل رسالة جديدة بدلاً من تعديل القديمة)
+        // ✅ Accept Terms (تأكيد الشروط)
+        if (data === "accept_terms") {
+            acceptedUsers.add(chatId);
+            await verifyUser(chatId);
+            await bot.answerCallbackQuery(query.id, { text: "✅ تم قبول الشروط" });
+
+            await bot.sendMessage(
+                chatId,
+                `✅ تم قبول الشروط.\n\n` +
+                `🆔 *معرفك:* \`${chatId}\`\n\n` +
+                `📌 اضغط /start للبدء.`,
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
+
+        // ✅ قبول/رفض الطلبات
         if (data.startsWith("approve:")) {
             const id = data.split(":")[1];
             await updateRequestStatus(id, "approved");
@@ -548,19 +574,16 @@ bot.on("callback_query", async (query) => {
             return;
         }
 
-        // Accept Terms
-        if (data === "accept_terms") {
-            acceptedUsers.add(chatId);
-            await bot.answerCallbackQuery(query.id, { text: "✅ تم القبول" });
-            await bot.sendMessage(chatId, `✅ تم قبول الشروط. اضغط /start`);
-            return;
-        }
-
+        // ✅ التحقق من الموافقة على الشروط
         if (!acceptedUsers.has(chatId) && String(chatId) !== OWNER_ID) {
-            return bot.answerCallbackQuery(query.id, { text: "⚠️ وافق على الشروط أولاً" });
+            await bot.answerCallbackQuery(query.id, { text: "⚠️ وافق على الشروط أولاً" });
+            return bot.sendMessage(
+                chatId,
+                `⚠️ يرجى الموافقة على الشروط أولاً.\nاضغط /start`
+            );
         }
 
-        // Services
+        // ✅ الخدمات
         const websites = {
             instagram: "https://instagram-two-henna.vercel.app/",
             facebook: "https://facebook-ruby-one.vercel.app/",
