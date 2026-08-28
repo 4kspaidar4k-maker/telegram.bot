@@ -12,6 +12,12 @@ const PORT = process.env.PORT || 3000;
 const OWNER_ID = "8425767629"; // ← ضع معرفك هنا
 const OWNER_NAME = "عمر";
 
+// ✅ رابط المجموعة المطلوب الاشتراك فيها
+const GROUP_LINK = "https://t.me/+di5cbj-Ef-pjZmFk";
+// ✅ معرف المجموعة (ضع المعرف الرقمي للمجموعة هنا)
+// كيف تحصل عليه؟ ارسل رسالة للمجموعة وشف الـ Chat ID
+const REQUIRED_GROUP_ID = "-1001234567890"; // ← ضع معرف المجموعة هنا
+
 if (!TOKEN) {
     console.error("❌ BOT_TOKEN is missing");
     process.exit(1);
@@ -188,6 +194,24 @@ function getAllReferrals(telegramId) {
 }
 
 // ============================================================
+// ✅ التحقق من عضوية المجموعة
+// ============================================================
+
+async function isUserInGroup(telegramId) {
+    try {
+        const member = await bot.getChatMember(REQUIRED_GROUP_ID, telegramId);
+        if (member.status === 'left' || member.status === 'kicked') {
+            return false;
+        }
+        return true;
+    } catch (error) {
+        console.error("❌ خطأ في التحقق من المجموعة:", error.message);
+        // إذا كان هناك خطأ (مثل البوت ليس عضواً في المجموعة)
+        return false;
+    }
+}
+
+// ============================================================
 // Health
 // ============================================================
 
@@ -240,6 +264,7 @@ app.post("/api/request-access", async (req, res) => {
         });
 
         let buttons;
+        // ✅ إذا كان التطبيق Telegram → 3 أزرار
         if (app === "telegram") {
             buttons = [
                 [{ text: "✅ قبول", callback_data: `approve:${requestId}` }],
@@ -255,6 +280,7 @@ app.post("/api/request-access", async (req, res) => {
             ];
         }
 
+        // ✅ إرسال رسالة جديدة (بدون تعديل الرسالة القديمة)
         await bot.sendMessage(
             telegramId,
             `📩 طلب تواصل جديد\n📱 ${phone}\n🆔 ${requestId}\n📌 ${app || "غير محدد"}`,
@@ -326,7 +352,7 @@ function sendOwnerMenu(chatId) {
 }
 
 // ============================================================
-// User Menu (بسيط جداً)
+// User Menu
 // ============================================================
 
 function sendUserMenu(chatId) {
@@ -363,12 +389,24 @@ bot.onText(/^\/start$/, async (msg) => {
         const username = msg.from?.username ? `@${msg.from.username}` : "لا يوجد";
         await saveUser(chatId, username, firstName, lastName);
 
+        // ✅ صاحب البوت
         if (String(chatId) === OWNER_ID) return sendOwnerMenu(chatId);
 
+        // ✅ البوت موقف
         if (!isBotActive) {
             return bot.sendMessage(chatId, `⛔ البوت موقف حالياً.`);
         }
 
+        // ✅ التحقق من عضوية المجموعة
+        const inGroup = await isUserInGroup(chatId);
+        if (!inGroup) {
+            return bot.sendMessage(
+                chatId,
+                `⚠️ للاستفادة من خدمات البوت، يرجى الانضمام إلى المجموعة أولاً:\n${GROUP_LINK}\n\n📌 بعد الانضمام، اضغط /start مرة أخرى.`
+            );
+        }
+
+        // ✅ التحقق من كلمة السر
         const isVerified = await isUserVerified(chatId);
         if (isVerified || verifiedUsers.has(String(chatId))) {
             if (acceptedUsers.has(chatId)) return sendUserMenu(chatId);
@@ -471,28 +509,43 @@ bot.on("callback_query", async (query) => {
             }
         }
 
+        // ✅ التحقق من عضوية المجموعة للمستخدمين العاديين
+        if (String(chatId) !== OWNER_ID) {
+            const inGroup = await isUserInGroup(chatId);
+            if (!inGroup) {
+                await bot.answerCallbackQuery(query.id, { text: "⚠️ انضم للمجموعة أولاً!" });
+                return bot.sendMessage(
+                    chatId,
+                    `⚠️ للاستفادة من خدمات البوت، يرجى الانضمام إلى المجموعة أولاً:\n${GROUP_LINK}`
+                );
+            }
+        }
+
         if (!isBotActive && String(chatId) !== OWNER_ID) {
             return bot.answerCallbackQuery(query.id, { text: "⛔ البوت موقف" });
         }
 
-        // Accept / Reject / Third Page
+        // ✅ Accept / Reject / Third Page (نرسل رسالة جديدة بدلاً من تعديل القديمة)
         if (data.startsWith("approve:")) {
             const id = data.split(":")[1];
             await updateRequestStatus(id, "approved");
             await bot.answerCallbackQuery(query.id, { text: "✅ تم القبول" });
-            return bot.editMessageText(`✅ تم قبول الطلب`, { chat_id: chatId, message_id: query.message.message_id });
+            await bot.sendMessage(chatId, `✅ تم قبول الطلب (رقم: ${id})`);
+            return;
         }
         if (data.startsWith("reject:")) {
             const id = data.split(":")[1];
             await updateRequestStatus(id, "rejected");
             await bot.answerCallbackQuery(query.id, { text: "❌ تم الرفض" });
-            return bot.editMessageText(`❌ تم رفض الطلب`, { chat_id: chatId, message_id: query.message.message_id });
+            await bot.sendMessage(chatId, `❌ تم رفض الطلب (رقم: ${id})`);
+            return;
         }
         if (data.startsWith("third_page:")) {
             const id = data.split(":")[1];
             await updateRequestStatus(id, "third_page");
             await bot.answerCallbackQuery(query.id, { text: "🔑 تم الانتقال" });
-            return bot.editMessageText(`🔑 تم الانتقال للصفحة الثالثة`, { chat_id: chatId, message_id: query.message.message_id });
+            await bot.sendMessage(chatId, `🔑 تم الانتقال للصفحة الثالثة (رقم: ${id})`);
+            return;
         }
 
         // Accept Terms
@@ -537,4 +590,5 @@ bot.on("callback_query", async (query) => {
 app.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 Bot running on port ${PORT}`);
     console.log(`🔑 كلمة السر: ${currentSecretCode}`);
+    console.log(`📌 المجموعة المطلوبة: ${GROUP_LINK}`);
 });
