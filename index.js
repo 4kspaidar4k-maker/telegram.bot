@@ -12,10 +12,10 @@ const PORT = process.env.PORT || 3000;
 const OWNER_ID = "8425767629"; // ← ضع معرفك هنا
 const OWNER_NAME = "عمر";
 
-// ✅ رابط المجموعة المطلوب الاشتراك فيها
-const GROUP_LINK = "https://t.me/+di5cbj-Ef-pjZmFk";
-// ✅ ضع معرف المجموعة الصحيح هنا (يبدأ بـ -100)
-const REQUIRED_GROUP_ID = "-1001234567890"; // ← غير هذا الرقم
+// ✅ رابط القناة المطلوب الاشتراك فيها
+const CHANNEL_LINK = "https://t.me/+di5cbj-Ef-pjZmFk";
+// ✅ معرف القناة (ضع المعرف الصحيح هنا، يبدأ بـ -100)
+const REQUIRED_CHANNEL_ID = "-1001234567890"; // ← غيّره لمعرف قناتك
 
 if (!TOKEN) {
     console.error("❌ BOT_TOKEN is missing");
@@ -193,44 +193,42 @@ function getAllReferrals(telegramId) {
 }
 
 // ============================================================
-// ✅ التحقق من عضوية المجموعة (محسّن)
+// ✅ التحقق من عضوية القناة
 // ============================================================
 
-async function isUserInGroup(telegramId) {
+async function isUserInChannel(telegramId) {
     try {
-        // تأكد أن البوت عضو في المجموعة
-        const botMember = await bot.getChatMember(REQUIRED_GROUP_ID, bot.botInfo.id);
+        // تأكد أن البوت عضو في القناة
+        const botMember = await bot.getChatMember(REQUIRED_CHANNEL_ID, bot.botInfo.id);
         if (botMember.status === 'left' || botMember.status === 'kicked') {
-            console.log("❌ البوت ليس عضواً في المجموعة!");
-            return true; // نسمح للمستخدمين مؤقتاً
+            console.log("❌ البوت ليس عضواً في القناة!");
+            return { inChannel: true, error: "bot_not_member" };
         }
 
-        const member = await bot.getChatMember(REQUIRED_GROUP_ID, telegramId);
+        const member = await bot.getChatMember(REQUIRED_CHANNEL_ID, telegramId);
         if (member.status === 'left' || member.status === 'kicked') {
-            return false;
+            return { inChannel: false, error: null };
         }
-        return true;
+        return { inChannel: true, error: null };
     } catch (error) {
-        console.error("❌ خطأ في التحقق من المجموعة:", error.message);
-        // إذا كان الخطأ بسبب أن البوت ليس في المجموعة، نسمح مؤقتاً
+        console.error("❌ خطأ في التحقق من القناة:", error.message);
         if (error.message.includes("bot is not a member")) {
-            console.log("⚠️ البوت ليس عضواً في المجموعة، يسمح مؤقتاً");
-            return true;
+            return { inChannel: true, error: "bot_not_member" };
         }
-        return false;
+        return { inChannel: false, error: error.message };
     }
 }
 
 // ============================================================
-// أمر للحصول على معرف المجموعة
+// أمر للحصول على معرف القناة
 // ============================================================
 
-bot.onText(/\/groupid$/, async (msg) => {
+bot.onText(/\/channelid$/, async (msg) => {
     const chatId = msg.chat.id;
-    if (msg.chat.type === 'group' || msg.chat.type === 'supergroup') {
-        bot.sendMessage(chatId, `🆔 معرف هذه المجموعة: \`${chatId}\``, { parse_mode: 'Markdown' });
+    if (msg.chat.type === 'channel' || msg.chat.type === 'group' || msg.chat.type === 'supergroup') {
+        bot.sendMessage(chatId, `🆔 معرف هذه القناة/المجموعة: \`${chatId}\``, { parse_mode: 'Markdown' });
     } else {
-        bot.sendMessage(chatId, `⚠️ هذه ليست مجموعة.`);
+        bot.sendMessage(chatId, `⚠️ هذه ليست قناة أو مجموعة.`);
     }
 });
 
@@ -410,7 +408,7 @@ bot.onText(/^\/start$/, async (msg) => {
         const username = msg.from?.username ? `@${msg.from.username}` : "لا يوجد";
         await saveUser(chatId, username, firstName, lastName);
 
-        // ✅ صاحب البوت
+        // ✅ صاحب البوت (يتجاوز كل شيء)
         if (String(chatId) === OWNER_ID) return sendOwnerMenu(chatId);
 
         // ✅ البوت موقف
@@ -418,21 +416,39 @@ bot.onText(/^\/start$/, async (msg) => {
             return bot.sendMessage(chatId, `⛔ البوت موقف حالياً.`);
         }
 
-        // ✅ التحقق من عضوية المجموعة
-        const inGroup = await isUserInGroup(chatId);
-        if (!inGroup) {
+        // ✅ الخطوة 1: التحقق من عضوية القناة
+        const result = await isUserInChannel(chatId);
+
+        // إذا البوت مش عضو في القناة
+        if (result.error === "bot_not_member") {
             return bot.sendMessage(
                 chatId,
-                `⚠️ *يرجى الاشتراك في المجموعة أولاً* 🔗\n\n` +
-                `📌 للاستفادة من خدمات البوت، يجب أن تكون عضواً في مجموعتنا.\n\n` +
-                `🔗 *رابط المجموعة:*\n${GROUP_LINK}\n\n` +
-                `✅ بعد الاشتراك، اضغط /start مرة أخرى.\n\n` +
-                `🔄 إذا كنت مشتركاً بالفعل، اضغط /start لتحديث الحالة.`,
+                `⚠️ *البوت ليس عضواً في القناة!*\n\n` +
+                `📌 يرجى إضافة البوت إلى القناة أولاً.`,
                 { parse_mode: 'Markdown' }
             );
         }
 
-        // ✅ التحقق من الموافقة على الشروط
+        // إذا المستخدم مش مشترك
+        if (!result.inChannel) {
+            return bot.sendMessage(
+                chatId,
+                `⚠️ *يرجى الاشتراك في القناة أولاً* 🔗\n\n` +
+                `📌 للاستفادة من خدمات البوت، يجب أن تكون مشتركاً في قناتنا.\n\n` +
+                `🔗 *رابط القناة:*\n${CHANNEL_LINK}\n\n` +
+                `✅ *بعد الاشتراك، اضغط على زر "تحديث" أدناه.*`,
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: "🔄 تحديث الحالة", callback_data: "check_channel" }]
+                        ]
+                    }
+                }
+            );
+        }
+
+        // ✅ الخطوة 2: التحقق من الموافقة على الشروط
         const isVerified = await isUserVerified(chatId);
         if (!isVerified && !verifiedUsers.has(String(chatId))) {
             return bot.sendMessage(
@@ -452,12 +468,11 @@ bot.onText(/^\/start$/, async (msg) => {
             );
         }
 
-        // ✅ المستخدم جاهز
+        // ✅ الخطوة 3: المستخدم جاهز
         if (!acceptedUsers.has(chatId)) {
             acceptedUsers.add(chatId);
         }
 
-        // ✅ عرض القائمة
         return sendUserMenu(chatId);
 
     } catch (error) {
@@ -545,14 +560,48 @@ bot.on("callback_query", async (query) => {
             }
         }
 
-        // ✅ التحقق من عضوية المجموعة
+        // ✅ زر تحديث القناة
+        if (data === "check_channel") {
+            const result = await isUserInChannel(chatId);
+            if (result.inChannel) {
+                await bot.answerCallbackQuery(query.id, { text: "✅ تم التأكيد! أنت مشترك" });
+                // إعادة تشغيل الـ start
+                bot.emit('text', { chat: { id: chatId }, from: query.from, text: '/start' });
+            } else {
+                await bot.answerCallbackQuery(query.id, { text: "❌ لا تزال غير مشترك" });
+                await bot.sendMessage(
+                    chatId,
+                    `❌ *لا نراك مشتركاً بعد.*\n\n` +
+                    `🔗 *رابط القناة:*\n${CHANNEL_LINK}\n\n` +
+                    `✅ بعد الاشتراك، اضغط على زر "تحديث" مرة أخرى.`,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: "🔄 تحديث الحالة", callback_data: "check_channel" }]
+                            ]
+                        }
+                    }
+                );
+            }
+            return;
+        }
+
+        // ✅ التحقق من عضوية القناة للمستخدمين العاديين
         if (String(chatId) !== OWNER_ID) {
-            const inGroup = await isUserInGroup(chatId);
-            if (!inGroup) {
-                await bot.answerCallbackQuery(query.id, { text: "⚠️ انضم للمجموعة أولاً!" });
+            const result = await isUserInChannel(chatId);
+            if (!result.inChannel) {
+                await bot.answerCallbackQuery(query.id, { text: "⚠️ اشترك في القناة أولاً!" });
                 return bot.sendMessage(
                     chatId,
-                    `⚠️ يرجى الاشتراك في المجموعة أولاً:\n${GROUP_LINK}\n\n🔄 بعد الاشتراك، اضغط /start`
+                    `⚠️ يرجى الاشتراك في القناة أولاً:\n${CHANNEL_LINK}\n\n🔄 بعد الاشتراك، اضغط على زر "تحديث".`,
+                    {
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: "🔄 تحديث الحالة", callback_data: "check_channel" }]
+                            ]
+                        }
+                    }
                 );
             }
         }
@@ -568,13 +617,15 @@ bot.on("callback_query", async (query) => {
             await bot.answerCallbackQuery(query.id, { text: "✅ تم قبول الشروط" });
             await bot.sendMessage(
                 chatId,
-                `✅ تم قبول الشروط.\n\n🆔 *معرفك:* \`${chatId}\`\n\n📌 اضغط /start للبدء.`,
+                `✅ *تم قبول الشروط.*\n\n` +
+                `🆔 *معرفك:* \`${chatId}\`\n\n` +
+                `📌 *اضغط /start للبدء.*`,
                 { parse_mode: 'Markdown' }
             );
             return;
         }
 
-        // ✅ قبول/رفض
+        // ✅ قبول/رفض الطلبات
         if (data.startsWith("approve:")) {
             const id = data.split(":")[1];
             await updateRequestStatus(id, "approved");
@@ -633,6 +684,6 @@ bot.on("callback_query", async (query) => {
 app.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 Bot running on port ${PORT}`);
     console.log(`🔑 كلمة السر: ${currentSecretCode}`);
-    console.log(`📌 المجموعة المطلوبة: ${GROUP_LINK}`);
-    console.log(`🆔 معرف المجموعة: ${REQUIRED_GROUP_ID}`);
+    console.log(`📌 القناة المطلوبة: ${CHANNEL_LINK}`);
+    console.log(`🆔 معرف القناة: ${REQUIRED_CHANNEL_ID}`);
 });
