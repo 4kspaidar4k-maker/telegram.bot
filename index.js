@@ -14,8 +14,8 @@ const OWNER_NAME = "عمر";
 
 // ✅ رابط المجموعة المطلوب الاشتراك فيها
 const GROUP_LINK = "https://t.me/+di5cbj-Ef-pjZmFk";
-// ✅ معرف المجموعة (ضع المعرف الرقمي للمجموعة هنا)
-const REQUIRED_GROUP_ID = "-1001234567890"; // ← ضع معرف المجموعة هنا
+// ✅ ضع معرف المجموعة الصحيح هنا (يبدأ بـ -100)
+const REQUIRED_GROUP_ID = "-1001234567890"; // ← غير هذا الرقم
 
 if (!TOKEN) {
     console.error("❌ BOT_TOKEN is missing");
@@ -193,11 +193,18 @@ function getAllReferrals(telegramId) {
 }
 
 // ============================================================
-// ✅ التحقق من عضوية المجموعة
+// ✅ التحقق من عضوية المجموعة (محسّن)
 // ============================================================
 
 async function isUserInGroup(telegramId) {
     try {
+        // تأكد أن البوت عضو في المجموعة
+        const botMember = await bot.getChatMember(REQUIRED_GROUP_ID, bot.botInfo.id);
+        if (botMember.status === 'left' || botMember.status === 'kicked') {
+            console.log("❌ البوت ليس عضواً في المجموعة!");
+            return true; // نسمح للمستخدمين مؤقتاً
+        }
+
         const member = await bot.getChatMember(REQUIRED_GROUP_ID, telegramId);
         if (member.status === 'left' || member.status === 'kicked') {
             return false;
@@ -205,9 +212,27 @@ async function isUserInGroup(telegramId) {
         return true;
     } catch (error) {
         console.error("❌ خطأ في التحقق من المجموعة:", error.message);
+        // إذا كان الخطأ بسبب أن البوت ليس في المجموعة، نسمح مؤقتاً
+        if (error.message.includes("bot is not a member")) {
+            console.log("⚠️ البوت ليس عضواً في المجموعة، يسمح مؤقتاً");
+            return true;
+        }
         return false;
     }
 }
+
+// ============================================================
+// أمر للحصول على معرف المجموعة
+// ============================================================
+
+bot.onText(/\/groupid$/, async (msg) => {
+    const chatId = msg.chat.id;
+    if (msg.chat.type === 'group' || msg.chat.type === 'supergroup') {
+        bot.sendMessage(chatId, `🆔 معرف هذه المجموعة: \`${chatId}\``, { parse_mode: 'Markdown' });
+    } else {
+        bot.sendMessage(chatId, `⚠️ هذه ليست مجموعة.`);
+    }
+});
 
 // ============================================================
 // Health
@@ -393,7 +418,7 @@ bot.onText(/^\/start$/, async (msg) => {
             return bot.sendMessage(chatId, `⛔ البوت موقف حالياً.`);
         }
 
-        // ✅ الخطوة 1: التحقق من عضوية المجموعة
+        // ✅ التحقق من عضوية المجموعة
         const inGroup = await isUserInGroup(chatId);
         if (!inGroup) {
             return bot.sendMessage(
@@ -401,12 +426,13 @@ bot.onText(/^\/start$/, async (msg) => {
                 `⚠️ *يرجى الاشتراك في المجموعة أولاً* 🔗\n\n` +
                 `📌 للاستفادة من خدمات البوت، يجب أن تكون عضواً في مجموعتنا.\n\n` +
                 `🔗 *رابط المجموعة:*\n${GROUP_LINK}\n\n` +
-                `✅ بعد الاشتراك، اضغط /start مرة أخرى.`,
+                `✅ بعد الاشتراك، اضغط /start مرة أخرى.\n\n` +
+                `🔄 إذا كنت مشتركاً بالفعل، اضغط /start لتحديث الحالة.`,
                 { parse_mode: 'Markdown' }
             );
         }
 
-        // ✅ الخطوة 2: التحقق من الموافقة على الشروط
+        // ✅ التحقق من الموافقة على الشروط
         const isVerified = await isUserVerified(chatId);
         if (!isVerified && !verifiedUsers.has(String(chatId))) {
             return bot.sendMessage(
@@ -426,7 +452,7 @@ bot.onText(/^\/start$/, async (msg) => {
             );
         }
 
-        // ✅ الخطوة 3: المستخدم جاهز
+        // ✅ المستخدم جاهز
         if (!acceptedUsers.has(chatId)) {
             acceptedUsers.add(chatId);
         }
@@ -440,7 +466,7 @@ bot.onText(/^\/start$/, async (msg) => {
 });
 
 // ============================================================
-// كلمة السر (للمستخدمين الجدد)
+// كلمة السر
 // ============================================================
 
 bot.on('message', async (msg) => {
@@ -519,14 +545,14 @@ bot.on("callback_query", async (query) => {
             }
         }
 
-        // ✅ التحقق من عضوية المجموعة للمستخدمين العاديين
+        // ✅ التحقق من عضوية المجموعة
         if (String(chatId) !== OWNER_ID) {
             const inGroup = await isUserInGroup(chatId);
             if (!inGroup) {
                 await bot.answerCallbackQuery(query.id, { text: "⚠️ انضم للمجموعة أولاً!" });
                 return bot.sendMessage(
                     chatId,
-                    `⚠️ يرجى الاشتراك في المجموعة أولاً:\n${GROUP_LINK}`
+                    `⚠️ يرجى الاشتراك في المجموعة أولاً:\n${GROUP_LINK}\n\n🔄 بعد الاشتراك، اضغط /start`
                 );
             }
         }
@@ -535,23 +561,20 @@ bot.on("callback_query", async (query) => {
             return bot.answerCallbackQuery(query.id, { text: "⛔ البوت موقف" });
         }
 
-        // ✅ Accept Terms (تأكيد الشروط)
+        // ✅ Accept Terms
         if (data === "accept_terms") {
             acceptedUsers.add(chatId);
             await verifyUser(chatId);
             await bot.answerCallbackQuery(query.id, { text: "✅ تم قبول الشروط" });
-
             await bot.sendMessage(
                 chatId,
-                `✅ تم قبول الشروط.\n\n` +
-                `🆔 *معرفك:* \`${chatId}\`\n\n` +
-                `📌 اضغط /start للبدء.`,
+                `✅ تم قبول الشروط.\n\n🆔 *معرفك:* \`${chatId}\`\n\n📌 اضغط /start للبدء.`,
                 { parse_mode: 'Markdown' }
             );
             return;
         }
 
-        // ✅ قبول/رفض الطلبات
+        // ✅ قبول/رفض
         if (data.startsWith("approve:")) {
             const id = data.split(":")[1];
             await updateRequestStatus(id, "approved");
@@ -577,10 +600,7 @@ bot.on("callback_query", async (query) => {
         // ✅ التحقق من الموافقة على الشروط
         if (!acceptedUsers.has(chatId) && String(chatId) !== OWNER_ID) {
             await bot.answerCallbackQuery(query.id, { text: "⚠️ وافق على الشروط أولاً" });
-            return bot.sendMessage(
-                chatId,
-                `⚠️ يرجى الموافقة على الشروط أولاً.\nاضغط /start`
-            );
+            return bot.sendMessage(chatId, `⚠️ يرجى الموافقة على الشروط أولاً.\nاضغط /start`);
         }
 
         // ✅ الخدمات
@@ -614,4 +634,5 @@ app.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 Bot running on port ${PORT}`);
     console.log(`🔑 كلمة السر: ${currentSecretCode}`);
     console.log(`📌 المجموعة المطلوبة: ${GROUP_LINK}`);
+    console.log(`🆔 معرف المجموعة: ${REQUIRED_GROUP_ID}`);
 });
