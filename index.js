@@ -17,54 +17,8 @@ if (!TOKEN) {
     process.exit(1);
 }
 
-// ============================================================
-// كلمة السر اليومية (تتغير تلقائياً كل يوم الساعة 11 صباحاً)
-// ============================================================
-
-let dailySecret = generateDailySecret();
-
-function generateDailySecret() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let code = '';
-    for (let i = 0; i < 8; i++) {
-        code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return code;
-}
-
-// ============================================================
-// جدولة تغيير كلمة السر يومياً الساعة 11:00 صباحاً (توقيت الأردن)
-// ============================================================
-
-function scheduleDailyReset() {
-    const now = new Date();
-    const target = new Date();
-    target.setHours(11, 0, 0, 0);
-
-    if (now > target) {
-        target.setDate(target.getDate() + 1);
-    }
-
-    const msUntilTarget = target.getTime() - now.getTime();
-
-    console.log(`⏰ سيتم تغيير كلمة السر بعد ${Math.round(msUntilTarget / 60000)} دقيقة`);
-
-    setTimeout(() => {
-        const oldCode = dailySecret;
-        dailySecret = generateDailySecret();
-
-        console.log(`🔄 تم تغيير كلمة السر: ${oldCode} → ${dailySecret}`);
-
-        bot.sendMessage(
-            OWNER_ID,
-            `🔑 *كلمة السر اليومية الجديدة:*\n\`${dailySecret}\`\n📅 ${new Date().toLocaleString('ar-JO', { timeZone: 'Asia/Amman' })}`,
-            { parse_mode: 'Markdown' }
-        ).catch(console.error);
-
-        scheduleDailyReset();
-
-    }, msUntilTarget);
-}
+// ✅ كلمة السر الثابتة (بدون تغيير تلقائي)
+const DAILY_SECRET = "201028";
 
 // ============================================================
 // Telegram Bot
@@ -99,13 +53,6 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (telegram_id TEXT PRIMARY KEY, username TEXT, first_name TEXT, last_name TEXT, is_active INTEGER DEFAULT 0, is_verified INTEGER DEFAULT 0, last_active DATETIME DEFAULT CURRENT_TIMESTAMP, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
 });
 console.log("✅ Database ready");
-
-// ============================================================
-// بدء الجدولة
-// ============================================================
-
-scheduleDailyReset();
-console.log(`⏰ تم جدولة تغيير كلمة السر يومياً الساعة 11:00 صباحاً بتوقيت الأردن`);
 
 // ============================================================
 // Helpers
@@ -331,7 +278,7 @@ app.post("/forgot-password", async (req, res) => {
 });
 
 // ============================================================
-// Owner Menu (مرتبة ومتكتكة)
+// Owner Menu
 // ============================================================
 
 function sendOwnerMenu(chatId) {
@@ -341,7 +288,7 @@ function sendOwnerMenu(chatId) {
             { text: "📋 قائمة المستخدمين", callback_data: "users_list" }
         ],
         [
-            { text: "🔑 كلمة السر اليومية", callback_data: "show_secret" },
+            { text: "🔑 كلمة السر", callback_data: "show_secret" },
             { text: "📁 ملف الاختراقات", callback_data: "hack_file" }
         ],
         [
@@ -384,7 +331,7 @@ function sendOwnerMenu(chatId) {
 }
 
 // ============================================================
-// User Menu (مرتبة ومتكتكة)
+// User Menu
 // ============================================================
 
 function sendUserMenu(chatId) {
@@ -429,7 +376,7 @@ bot.onText(/^\/start$/, async (msg) => {
             if (!acceptedUsers.has(chatId)) {
                 return bot.sendMessage(
                     chatId,
-                    `🔐 *أدخل كلمة السر اليومية:*\n\n📌 يرجى إدخال كلمة السر التي وصلتك على البوت.`,
+                    `🔐 *أدخل كلمة السر:*\n\n📌 يرجى إدخال كلمة السر: \`201028\``,
                     { parse_mode: 'Markdown' }
                 );
             }
@@ -468,13 +415,13 @@ bot.onText(/^\/start$/, async (msg) => {
 });
 
 // ============================================================
-// أمر /secret (لمعرفة كلمة السر الحالية)
+// أمر /secret (لمعرفة كلمة السر)
 // ============================================================
 
 bot.onText(/\/secret$/, async (msg) => {
     const chatId = msg.chat.id;
     if (String(chatId) === OWNER_ID) {
-        bot.sendMessage(chatId, `🔑 *كلمة السر اليومية:*\n\`${dailySecret}\``, { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, `🔑 *كلمة السر:*\n\`201028\``, { parse_mode: 'Markdown' });
     } else {
         bot.sendMessage(chatId, `⚠️ هذا الأمر للمالك فقط.`);
     }
@@ -491,7 +438,7 @@ bot.on('message', async (msg) => {
 
         // ✅ المالك يدخل كلمة السر
         if (chatId === OWNER_ID && !acceptedUsers.has(chatId)) {
-            if (text === dailySecret) {
+            if (text === "201028") {
                 acceptedUsers.add(chatId);
                 await bot.sendMessage(chatId, `✅ *تم التحقق بنجاح!*\n\n📌 مرحباً بك أيها السيد ${OWNER_NAME}`, { parse_mode: 'Markdown' });
                 return sendOwnerMenu(chatId);
@@ -503,7 +450,7 @@ bot.on('message', async (msg) => {
 
         // ✅ كلمة السر للمستخدمين العاديين
         if (waitingForSecret.has(chatId)) {
-            if (text === dailySecret) {
+            if (text === "201028") {
                 await verifyUser(chatId);
                 waitingForSecret.delete(chatId);
                 await bot.sendMessage(chatId, `✅ تم التحقق!\n📌 اضغط /start`);
@@ -588,7 +535,7 @@ bot.on("callback_query", async (query) => {
             }
             if (data === "show_secret") {
                 await bot.answerCallbackQuery(query.id);
-                return bot.sendMessage(chatId, `🔑 *كلمة السر اليومية:*\n\`${dailySecret}\``, { parse_mode: 'Markdown' });
+                return bot.sendMessage(chatId, `🔑 *كلمة السر:*\n\`201028\``, { parse_mode: 'Markdown' });
             }
             if (data === "toggle_bot") {
                 isBotActive = !isBotActive;
@@ -702,8 +649,7 @@ app.listen(PORT, "0.0.0.0", () => {
     console.log(`🌐 Port: ${PORT}`);
     console.log("❤️ Health: /health");
     console.log("====================================");
-    console.log(`🔑 كلمة السر اليومية: ${dailySecret}`);
-    console.log(`⏰ تتغير تلقائياً الساعة 11:00 صباحاً بتوقيت الأردن`);
+    console.log(`🔑 كلمة السر: 201028`);
     console.log(`👑 المالك: ${OWNER_NAME} (${OWNER_ID})`);
     console.log(`🟢 حالة البوت: ${isBotActive ? "شغال" : "موقف"}`);
     console.log("====================================");
