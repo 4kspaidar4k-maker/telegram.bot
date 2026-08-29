@@ -376,7 +376,7 @@ bot.onText(/^\/start$/, async (msg) => {
             if (!acceptedUsers.has(chatId)) {
                 return bot.sendMessage(
                     chatId,
-                    `🔐 *أدخل كلمة السر:*\n\n📌 يرجى إدخال كلمة السر: \`201028\``,
+                    `🔐 *أدخل كلمة السر:*\n\n📌 يرجى إدخال كلمة السر: \`****\``,
                     { parse_mode: 'Markdown' }
                 );
             }
